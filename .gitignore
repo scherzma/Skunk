@@ -19,3 +19,6 @@
 
 # Go workspace file
 go.work
+
+# Because Mac XD
+.DS_Store
