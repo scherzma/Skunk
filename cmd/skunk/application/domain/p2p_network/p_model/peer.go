@@ -22,7 +22,7 @@ type Peer struct {
 }
 
 func NewPeer(hostname, port, proxyAddr string) (*Peer, error) {
-	dialer, err := proxy.SOCKS5("tcp", proxyAddr, nil, nil)
+	transport, err := createTransport(proxyAddr)
 	if err != nil {
 		return nil, fmt.Errorf("creating SOCKS5 dialer: %w", err)
 	}
@@ -33,11 +33,23 @@ func NewPeer(hostname, port, proxyAddr string) (*Peer, error) {
 		ProxyAddr: proxyAddr,
 		quitch:    make(chan struct{}),
 		client: &http.Client{
-			Transport: &http.Transport{
-				Dial: dialer.Dial,
-			},
+			Transport: transport,
 		},
 	}, nil
+}
+
+func createTransport(proxyAddr string) (*http.Transport, error) {
+	if proxyAddr != "" {
+		dialer, err := proxy.SOCKS5("tcp", proxyAddr, nil, nil)
+		if err != nil {
+			return nil, fmt.Errorf("creating SOCKS5 dialer: %w", err)
+		}
+		return &http.Transport{
+			Dial: dialer.Dial,
+		}, nil
+	} else {
+		return &http.Transport{}, nil
+	}
 }
 
 func (p *Peer) Listen() {
