@@ -1,7 +1,11 @@
 package main
 
-import "fmt"
+import (
+	"github.com/scherzma/Skunk/cmd/skunk/adapter/out/storage"
+)
 
 func main() {
-	fmt.Println("Hello, World!")
+	// Create a new SQLite storage for the message queue
+	storeMessageQueueSQLite := storage.StoreMessageQueueSQLite{}
+	storeMessageQueueSQLite.StoreMessageQueue(nil)
 }
