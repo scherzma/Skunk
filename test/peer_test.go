@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_model"
+	"github.com/scherzma/Skunk/cmd/skunk/adapter/in/peer"
 
 	"github.com/stretchr/testify/assert"
 )
 
 func TestPeerSendMessageWorkflow(t *testing.T) {
-	peer1, err := p_model.NewPeer("127.0.0.1", "1111", "")
+	peer1, err := peer.NewPeer("127.0.0.1", "1111", "")
 	if err != nil {
 		t.Errorf("Error creating peer one %v", err)
 	}
@@ -19,7 +19,7 @@ func TestPeerSendMessageWorkflow(t *testing.T) {
 	assert.Equal(t, peer1.Port, "1111")
 	assert.Equal(t, peer1.ProxyAddr, "")
 
-	peer2, err := p_model.NewPeer("127.0.0.1", "6969", "")
+	peer2, err := peer.NewPeer("127.0.0.1", "6969", "")
 	if err != nil {
 		t.Errorf("Error creating peer one %v", err)
 	}
