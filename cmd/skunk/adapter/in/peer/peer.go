@@ -16,9 +16,9 @@ import (
 const (
     MaxConns = 64                           // MaxConns defines the maximum number of concurrent websocket connections allowed.
     connWait = 1 * time.Minute              // connWait specifies the timeout for connecting to another peer.
-    shutdownWait = 5 * Seconds              // shutdownWait specifies the wait time for shutting down the HTTP server.
+    shutdownWait = 5 * time.Second              // shutdownWait specifies the wait time for shutting down the HTTP server.
     heartbeatInterval = 30 * time.Second    // heartbeatInterval specifies the time interval between consecutive hearbeat messages.
-    writeTime = 10 * time.Second            // writeWait specifies the timeout for writing a heartbeat message.
+    writeWait = 10 * time.Second            // writeWait specifies the timeout for writing a heartbeat message.
 )
 
 // Peer encapsulates the state and functionality for a network peer, including its connections,
@@ -26,7 +26,7 @@ const (
 type Peer struct {
 	client     *http.Client                 // client is used to make HTTP requests with a custom transport, supporting proxy configuration.
     readConns  map[string]*websocket.Conn   // readConns maintains a map of active websocket connections for reading, indexed by the remote address.
-    mapRWLock  sync.RWMutex{}               // mapRWLock provides concurrent access control for readConns map.
+    mapRWLock  sync.RWMutex                 // mapRWLock provides concurrent access control for readConns map.
 	writeConn  *websocket.Conn              // writeConn is a dedicated websocket connection reserved for writing messages.
 	Hostname   string                       // Hostname specifies the network address of the peer.
 	Port       string                       // Port on which the peer listens for incoming connections.
@@ -89,7 +89,6 @@ func (p *Peer) Listen() {
 	go func() {
 		if err := srv.ListenAndServe(); err != http.ErrServerClosed {
 			log.Printf("HTTP server listen failed: %v", err)
-            break
 		}
 	}()
 
@@ -118,14 +117,14 @@ func (p *Peer) SetWriteConn(address string) error {
    if !p.isConnectedTo(address) {
        return fmt.Errorf("peer is not connected to address: %s", address) 
    }
-   p.writeConn := p.readConns[address]
+   p.writeConn = p.readConns[address]
    return nil
 }
 
 // Connect establishes a new websocket connection to the specified address and adds it to the pool of read connections.
 // It performs connection setup with a timeout and utilizes the configured HTTP client for the connection attempt.
 func (p *Peer) Connect(address string) error {
-    if p.isConnected(address) {
+    if p.isConnectedTo(address) {
         return fmt.Errorf("peer is already connected to address: %s", address)
     }
 
@@ -147,7 +146,7 @@ func (p *Peer) ReadMessage(address string) (interface{}, error) {
     defer p.readMutex.Unlock()
 
     if !p.isConnectedTo(address) {
-        return nil, fmt.Errorf("not conected to %s", err)
+        return nil, fmt.Errorf("not conected to %s", address)
     }
 
     p.mapRWLock.RLock()
@@ -159,9 +158,9 @@ func (p *Peer) ReadMessage(address string) (interface{}, error) {
 	}
 
 	var msg interface{}
-	err := wsjson.Read(context.Background(), c, &msg)
+	err := wsjson.Read(context.Background(), conn, &msg)
     if err != nil {
-        p.checkConnIsClosed(c, err) // Verifies if the connection should be removed from the pool due to being closed.
+        p.checkConnIsClosed(conn, err) // Verifies if the connection should be removed from the pool due to being closed.
         return nil, err
     }
 
@@ -197,7 +196,7 @@ func (p *Peer) Shutdown() {
     for _, conn := range p.readConns {
         conn.Close(websocket.StatusNormalClosure, "")
     }
-    p.readConns := make(map[string]*websocket.Conn) // Resets the connection pool.
+    p.readConns = make(map[string]*websocket.Conn) // Resets the connection pool.
     p.mapRWLock.RUnlock()
 
 	close(p.quitch) // Signals the shutdown listener to initiate server shutdown.
@@ -227,7 +226,7 @@ func (p *Peer) handleNewConnection(conn *websocket.Conn) error {
     if len(p.readConns) >= MaxConns {
         return fmt.Errorf("maximum number of connections reached: %d", MaxConns)
     }
-    p.readConns[conn.RemoteAddr().String()] := conn
+    p.readConns[conn.RemoteAddr().String()] = conn
     return nil
 }
 
