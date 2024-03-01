@@ -1,60 +1,111 @@
 package test
 
 import (
-	"fmt"
+    "time"
 	"testing"
-
-	"github.com/scherzma/Skunk/cmd/skunk/adapter/in/peer"
+    "context"
 
 	"github.com/stretchr/testify/assert"
+
+    "nhooyr.io/websocket"
+
+	"github.com/scherzma/Skunk/cmd/skunk/adapter/in/peer"
 )
 
-func TestPeerSendMessageWorkflow(t *testing.T) {
-	peer1, err := peer.NewPeer("127.0.0.1", "1111", "")
-	if err != nil {
-		t.Errorf("Error creating peer one %v", err)
-	}
 
-	assert.Equal(t, peer1.Hostname, "127.0.0.1")
-	assert.Equal(t, peer1.Port, "1111")
-	assert.Equal(t, peer1.ProxyAddr, "")
+func TestNewPeer(t *testing.T) {
+    // In the future this should include a test with a proxy
+
+    t.Run("initialize with valid parameters", func(t *testing.T) {
+        peerInstance, err := peer.NewPeer("127.0.0.1", "8080", "")
+        assert.NoError(t, err)
+        assert.NotNil(t, peerInstance)
+        assert.Equal(t, peerInstance.Hostname, "127.0.0.1")
+        assert.Equal(t, peerInstance.Port, "8080")
+        assert.Equal(t, peerInstance.ProxyAddr, "")
+    })
+}
+
+func TestListen(t *testing.T) {
+    peerInstance, err := peer.NewPeer("127.0.0.1", "8080", "")
+    assert.NoError(t, err)
+
+    peerInstance.Listen()
+    time.Sleep(1 * time.Second)
+
+    conn, _, err := websocket.Dial(context.Background(), "ws://127.0.0.1:8080", nil)
+    assert.NoError(t, err)
+    assert.NotNil(t, conn)
+
+    peerInstance.Shutdown()
+    defer conn.Close(websocket.StatusNormalClosure, "test completed")
+}
+
+func TestPeerSetWriteConn(t *testing.T) {
+    peer1, err := peer.NewPeer("127.0.0.1", "1111", "")
+    assert.NoError(t, err)
+
+    peer2, err := peer.NewPeer("127.0.0.1", "10000", "")
+    assert.NoError(t, err)
+
+    peer1.Listen()
+    time.Sleep(1 * time.Second)
+
+    err = peer2.Connect(peer1.Address)
+    assert.NoError(t, err)
+    time.Sleep(1 * time.Second)
+
+    err = peer2.SetWriteConn(peer1.Address)
+    assert.NoError(t, err)
+
+    peer1.Shutdown()
+    peer2.Shutdown()
+}
+
+func TestPeerSendMessage(t *testing.T) {
+	peer1, err := peer.NewPeer("127.0.0.1", "2222", "")
+    assert.NoError(t, err)
 
 	peer2, err := peer.NewPeer("127.0.0.1", "6969", "")
-	if err != nil {
-		t.Errorf("Error creating peer one %v", err)
-	}
-
-	assert.Equal(t, peer2.Hostname, "127.0.0.1")
-	assert.Equal(t, peer2.Port, "6969")
-	assert.Equal(t, peer2.ProxyAddr, "")
-
-	t.Log("Created both peers!")
+    assert.NoError(t, err)
 
 	peer1.Listen()
+    time.Sleep(1 * time.Second)
 	peer2.Listen()
+    time.Sleep(1 * time.Second)
 
-	t.Log("Both peers are listening")
+	err = peer1.Connect(peer2.Address)
+    assert.NoError(t, err)
+    time.Sleep(1 * time.Second)
 
-	err_connect := peer1.Connect(fmt.Sprintf("ws://%s:%s", peer2.Hostname, peer2.Port))
-	if err_connect != nil {
-		t.Errorf("Error connecting to peer two %v", err_connect)
-	}
+    err = peer1.SetWriteConn(peer2.Address)
+    assert.NoError(t, err)
 
-	err_message := peer1.WriteMessage("Hello Peer Two!")
-	if err_message != nil {
-		t.Errorf("Error sending message to peer two %v", err)
-	}
+    messageCh := make(chan string)
+    errorCh := make(chan error)
+	go peer2.ReadMessages(messageCh, errorCh)
 
-	v, err := peer2.ReadMessage()
-	if err != nil {
-		t.Errorf("Error reading message peer two %v", err)
-	}
+	err = peer1.WriteMessage("Hello Peer Two!")
+    assert.NoError(t, err)
 
-	t.Log("Peer One -> ", v)
-	assert.Equal(t, v.(string), "Hello Peer Two!")
+    select {
+    case msg := <-messageCh:
+        assert.Equal(t, msg, "From ws://127.0.0.1:2222: Hello Peer Two!")
+    case err := <-errorCh:
+        assert.NoError(t, err)
+    }
+
+	err = peer1.WriteMessage("Hello again Peer Two!")
+    assert.NoError(t, err)
+
+    select {
+    case msg := <-messageCh:
+        assert.Equal(t, msg, "From ws://127.0.0.1:2222: Hello again Peer Two!")
+    case err := <-errorCh:
+        assert.NoError(t, err)
+    }
 
 	peer1.Shutdown()
 	peer2.Shutdown()
-
-	t.Log("Both peers are shut down")
 }
+
