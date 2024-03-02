@@ -1,6 +1,7 @@
 package test
 
 import (
+    "fmt"
     "time"
 	"testing"
     "context"
@@ -9,6 +10,10 @@ import (
     "nhooyr.io/websocket"
 
 	"github.com/scherzma/Skunk/cmd/skunk/adapter/in/peer"
+)
+
+const (
+    waitTime = 1 * time.Second
 )
 
 // In the future this should include tests with a proxy
@@ -24,27 +29,29 @@ func TestNewPeer(t *testing.T) {
 
 func TestListen(t *testing.T) {
     peerInstance, err := peer.NewPeer("127.0.0.1", "8080", "")
+    defer peerInstance.Shutdown()
     assert.NoError(t, err)
 
     peerInstance.Listen()
-    time.Sleep(1 * time.Second)
+    time.Sleep(waitTime)
 
     // Connecting to peer address should work
     conn, _, err := websocket.Dial(context.Background(), "ws://127.0.0.1:8080", nil)
     assert.NoError(t, err)
     assert.NotNil(t, conn)
 
-    peerInstance.Shutdown()
-    defer conn.Close(websocket.StatusNormalClosure, "test completed")
+    conn.Close(websocket.StatusNormalClosure, "test completed")
 }
 
 func TestConnect(t *testing.T) {
     peer1, err := peer.NewPeer("127.0.0.1", "1234", "")
+    defer peer1.Shutdown()
     peer2, err := peer.NewPeer("127.0.0.1", "4321", "")
+    defer peer2.Shutdown()
 
     peer1.Listen()
     peer2.Listen()
-    time.Sleep(1 * time.Second)
+    time.Sleep(waitTime)
 
     // First connect from peer1 to peer2.
     err = peer1.Connect(peer2.Address)
@@ -65,20 +72,19 @@ func TestConnect(t *testing.T) {
     // Should return an error, because "" is not a valid address
     err = peer2.Connect("")
     assert.Error(t, err)
-
-    peer1.Shutdown()
-    peer2.Shutdown()
 }
 
 func TestPeerSetWriteConn(t *testing.T) {
-    peer1, err := peer.NewPeer("127.0.0.1", "1111", "")
-    peer2, err := peer.NewPeer("127.0.0.1", "10000", "")
+    peer1, _ := peer.NewPeer("127.0.0.1", "1111", "")
+    defer peer1.Shutdown()
+    peer2, _ := peer.NewPeer("127.0.0.1", "10000", "")
+    defer peer2.Shutdown()
 
     peer1.Listen()
-    time.Sleep(1 * time.Second)
+    time.Sleep(waitTime)
 
-    err = peer2.Connect(peer1.Address)
-    time.Sleep(1 * time.Second)
+    err := peer2.Connect(peer1.Address)
+    time.Sleep(waitTime)
 
     // First time setting the write conn to peer1.Address should work
     err = peer2.SetWriteConn(peer1.Address)
@@ -95,17 +101,19 @@ func TestPeerSetWriteConn(t *testing.T) {
     // Setting the write conn to "" should not work
     err = peer2.SetWriteConn("")
     assert.Error(t, err)
-
-    peer1.Shutdown()
-    peer2.Shutdown()
 }
 
 func TestPeerReadMessages(t * testing.T) {
     peer1, _ := peer.NewPeer("127.0.0.1", "2222", "")
+    defer peer1.Shutdown()
     peer2, _ := peer.NewPeer("127.0.0.1", "3333", "")
+    defer peer2.Shutdown()
     peer3, _ := peer.NewPeer("127.0.0.1", "4444", "")
+    defer peer3.Shutdown()
     peer4, _ := peer.NewPeer("127.0.0.1", "5555", "")
+    defer peer4.Shutdown()
     peer5, _ := peer.NewPeer("127.0.0.1", "6666", "")
+    defer peer5.Shutdown()
 
     peer1.Listen()
     time.Sleep(1 * time.Second)
@@ -149,54 +157,88 @@ func TestPeerReadMessages(t * testing.T) {
         assert.NoError(t, err)
     default:
     }
-
-    peer1.Shutdown()
-    peer2.Shutdown()
-    peer3.Shutdown()
-    peer4.Shutdown()
-    peer5.Shutdown()
 }
 
-func TestPeerSendMessage(t *testing.T) {
-	peer1, err := peer.NewPeer("127.0.0.1", "2222", "")
-	peer2, err := peer.NewPeer("127.0.0.1", "6969", "")
+func TestPeerWriteMessage(t *testing.T){
+    peer1, _ := peer.NewPeer("127.0.0.1", "8888", "")
+    defer peer1.Shutdown()
+    peer2, _ := peer.NewPeer("127.0.0.1", "7890", "")
+    defer peer2.Shutdown()
 
-	peer1.Listen()
-    time.Sleep(1 * time.Second)
-	peer2.Listen()
-    time.Sleep(1 * time.Second)
-
-	err = peer1.Connect(peer2.Address)
+    peer1.Listen()
     time.Sleep(1 * time.Second)
 
-    err = peer1.SetWriteConn(peer2.Address)
-    assert.NoError(t, err)
+    peer2.Connect(peer1.Address)
+    peer2.SetWriteConn(peer1.Address)
 
     messageCh := make(chan string)
     errorCh := make(chan error)
-	go peer2.ReadMessages(messageCh, errorCh)
+    go peer1.ReadMessages(messageCh, errorCh)
 
-	err = peer1.WriteMessage("Hello Peer Two!")
-    assert.NoError(t, err)
-
-    select {
-    case msg := <-messageCh:
-        assert.Equal(t, msg, "From ws://127.0.0.1:2222: Hello Peer Two!")
-    case err := <-errorCh:
-        assert.NoError(t, err)
+    var tests = []struct{
+    name string
+        input string
+        want string
+    }{
+        {"numbers", "1234567890", fmt.Sprintf("From %s: 1234567890", peer2.Address)},
+        {"LETTERS", "ABCDEFGHIZ", fmt.Sprintf("From %s: ABCDEFGHIZ", peer2.Address)},
+        {"letters", "abcdefghiz", fmt.Sprintf("From %s: abcdefghiz", peer2.Address)},
+        {"special", "!?({&=$-:,", fmt.Sprintf("From %s: !?({&=$-:,", peer2.Address)},
+        {"weird", "\t\n\r¬² ", fmt.Sprintf("From %s: \t\n\r¬² ", peer2.Address)},
+        {"mixture", "abc123ABC!", fmt.Sprintf("From %s: abc123ABC!", peer2.Address)},
     }
 
-	err = peer1.WriteMessage("Hello again Peer Two!")
-    assert.NoError(t, err)
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            peer2.WriteMessage(tt.input)
 
-    select {
-    case msg := <-messageCh:
-        assert.Equal(t, msg, "From ws://127.0.0.1:2222: Hello again Peer Two!")
-    case err := <-errorCh:
-        assert.NoError(t, err)
+            select {
+            case msg := <-messageCh:
+                assert.Equal(t, msg, tt.want)
+            case err := <-errorCh:
+                assert.NoError(t, err)
+            }
+        })
     }
-
-	peer1.Shutdown()
-	peer2.Shutdown()
 }
 
+func TestPeerShutdown(t *testing.T){
+    peerInstance, _ := peer.NewPeer("127.0.0.1", "1111", "")
+    defer peerInstance.Shutdown()
+
+    peerInstance.Listen()
+    time.Sleep(1 * time.Second)
+
+    peerInstance.Shutdown()
+
+    _, _, err := websocket.Dial(context.Background(), "ws://127.0.0.1:1111", nil)
+    assert.Error(t, err)
+
+    peerInstance.Listen()
+    time.Sleep(1 * time.Second)
+
+    conn, _, err := websocket.Dial(context.Background(), "ws://127.0.0.1:1111", nil)
+    assert.NoError(t, err)
+    assert.NotNil(t, conn)
+
+    conn.Close(websocket.StatusNormalClosure, "test completed")
+}
+
+func TestPeerHeartbeat(t *testing.T){
+    peer1, _ := peer.NewPeer("127.0.0.1", "1111", "")
+    defer peer1.Shutdown()
+    peer2, _ := peer.NewPeer("127.0.0.1", "2222", "")
+
+    peer1.Listen()
+    time.Sleep(1 * time.Second)
+
+    peer2.Connect(peer1.Address)
+    time.Sleep(1 * time.Second)
+
+    peer2.Shutdown()
+    time.Sleep(70 * time.Second)
+
+    // Should not work anymore, because hearbeat removed the closed connection
+    err := peer1.SetWriteConn(peer2.Address)
+    assert.Error(t, err)
+}

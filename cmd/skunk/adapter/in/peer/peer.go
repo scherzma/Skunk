@@ -1,7 +1,6 @@
 package peer
 
 import (
-    "bytes"
 	"context"
     "fmt"
 	"log"
@@ -19,16 +18,13 @@ const (
     MaxConns = 64                          // MaxConns defines the maximum number of concurrent websocket connections allowed.
     connWait = 1 * time.Minute             // connWait specifies the timeout for connecting to another peer.
     writeWait = 2 * time.Second            // writeWait specifies the timeout for writing a heartbeat message.
-    readWait = 3 * time.Second             // readWait specidifes the time for trying to read a message from a connection.
+    readWait = 1 * time.Second             // readWait specidifes the time for trying to read a message from a connection.
     shutdownWait = 0 * time.Second         // shutdownWait specifies the wait time for shutting down the HTTP server. (optional for later)
     readRateInterval = 2 * time.Second     // readRateInterval specifies the rate at which it will it is tried to read a message from every connection.
-    heartbeatInterval = 2 * time.Minute    // heartbeatInterval specifies the time interval between consecutive hearbeat messages.
+    //heartbeatInterval = 2 * time.Minute    // heartbeatInterval specifies the time interval between consecutive hearbeat messages.
+    heartbeatInterval = 30 * time.Second
+    pongWait = (heartbeatInterval * 9) / 10
     maxMessageSize = 512                   // maxMessageSize defines the maximum message size allowed from peer.
-)
-
-var (
-    newline = []byte{'\n'}
-    space   = []byte{' '}
 )
 
 var upgrader = websocket.Upgrader{
@@ -95,6 +91,13 @@ func createTransport(proxyAddr string) (*http.Transport, error) {
 // Listen sets up an HTTP server and starts listening on the configured port for incoming websocket connections.
 // It also starts a goroutine for graceful shutdown handling upon receiving a signal on the quitch channel.
 func (p *Peer) Listen() {
+    select {
+        case _, ok := <-p.quitch:
+            if !ok{
+                p.quitch = make(chan struct{}) // if closed then reopen channel
+            }
+        default:
+    }
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", p.handler) // Registers the main handler for incoming websocket upgrade requests.
 
@@ -198,7 +201,6 @@ func (p *Peer) readMessage(conn *websocket.Conn) (string, error) {
             return "", nil
         }
     }
-    messageBytes = bytes.TrimSpace(bytes.Replace(messageBytes, newline, space, -1))
 
 	return string(messageBytes), nil
 }
@@ -317,6 +319,13 @@ func (p *Peer) sendHeartbeatToAll() {
     defer p.writeMutex.Unlock()
 
     for address, conn := range p.readConns {
+        if conn == nil {
+           p.mapRWLock.Lock()
+           delete(p.readConns, address)
+           p.mapRWLock.Unlock()
+           continue;
+        }
+        conn.SetWriteDeadline(time.Now().Add(pongWait))
         if err := conn.WriteMessage(websocket.PingMessage, []byte{}); err != nil {
             p.mapRWLock.Lock()
             delete(p.readConns, address) // Optionally, we could try to reinitialize the connection here.
