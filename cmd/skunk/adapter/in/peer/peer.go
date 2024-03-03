@@ -1,14 +1,14 @@
 package peer
 
 import (
-	"context"
+    "context"
     "fmt"
-	"log"
-	"net/http"
+    "log"
+    "net/http"
     "sync"
-	"time"
+    "time"
 
-	"golang.org/x/net/proxy"
+    "golang.org/x/net/proxy"
     "github.com/gorilla/websocket"
 )
 
@@ -32,37 +32,37 @@ var upgrader = websocket.Upgrader{
 // Peer encapsulates the state and functionality for a network peer, including its connections,
 // configuration parameters, and synchronisation primitives for safe concurrent access.
 type Peer struct {
-	client     *http.Client                 // client is used to make HTTP requests with a custom transport, supporting proxy configuration.
+    client     *http.Client                 // client is used to make HTTP requests with a custom transport, supporting proxy configuration.
     readConns  map[string]*websocket.Conn   // readConns maintains a map of active websocket connections for reading, indexed by the remote address. Note: Maybe we can later use a sync.Map
     mapRWLock  sync.RWMutex                 // mapRWLock provides concurrent access control for readConns map.
-	writeConn  *websocket.Conn              // writeConn is a dedicated websocket connection reserved for writing messages.
-	Hostname   string                       // Hostname specifies the network address of the peer.
-	Port       string                       // Port on which the peer listens for incoming connections.
+    writeConn  *websocket.Conn              // writeConn is a dedicated websocket connection reserved for writing messages.
+    Hostname   string                       // Hostname specifies the network address of the peer.
+    Port       string                       // Port on which the peer listens for incoming connections.
     Address    string                       // Address specifies the complete websocket address: ws://Hostname:Port
-	ProxyAddr  string                       // ProxyAddr specifies the address of SOCKS5 proxy, if used for connections.
+    ProxyAddr  string                       // ProxyAddr specifies the address of SOCKS5 proxy, if used for connections.
     readMutex  sync.Mutex                   // readMutex provides concurrent access control for readConns.
     writeMutex sync.Mutex                   // writeMutex provides concurrent access control for writeConn.
-	quitch     chan struct{}                // quitch is used to signal the shutdown process for the peer.
+    quitch     chan struct{}                // quitch is used to signal the shutdown process for the peer.
 }
 
 // NewPeer initializes a new Peer instance with the given network settings.
 // It also configures the peer's HTTP client for optimal proxy support.
 func NewPeer(hostname, port, proxyAddr string) (*Peer, error) {
-	transport, err := createTransport(proxyAddr) // Attempts to create an HTTP transport, optionally configured with a SOCKS5 proxy.
-	if err != nil {
+    transport, err := createTransport(proxyAddr) // Attempts to create an HTTP transport, optionally configured with a SOCKS5 proxy.
+    if err != nil {
         return nil, fmt.Errorf("failed to create SOCKS5 dialer: %w", err)
-	}
+    }
 
     p := Peer{
         readConns: make(map[string]*websocket.Conn),
-		Hostname:  hostname,
-		Port:      port,
+	Hostname:  hostname,
+	port:      port,
         Address:   fmt.Sprintf("ws://%s:%s", hostname, port),
-		ProxyAddr: proxyAddr,
-		quitch:    make(chan struct{}),
-		client: &http.Client{
-			Transport: transport,
-		},
+	ProxyAddr: proxyAddr,
+	quitch:    make(chan struct{}),
+	client: &http.Client{
+	    Transport: transport,
+        },
     }
 
     // starts the heartbeat mechanism
@@ -74,15 +74,15 @@ func NewPeer(hostname, port, proxyAddr string) (*Peer, error) {
 // createTransport configures and returns an HTTP transport mechanism.
 // If a proxy address is provided, it configures the transport to use a SOCKS5 proxy.
 func createTransport(proxyAddr string) (*http.Transport, error) {
-	if proxyAddr != "" {
-		dialer, err := proxy.SOCKS5("tcp", proxyAddr, nil, nil)
-		if err != nil {
-			return nil, err
-		}
-		return &http.Transport{
-			Dial: dialer.Dial,
-		}, nil
+    if proxyAddr != "" {
+        dialer, err := proxy.SOCKS5("tcp", proxyAddr, nil, nil)
+	if err != nil {
+	    return nil, err
 	}
+	    return &http.Transport{
+		Dial: dialer.Dial,
+	}, nil
+    }
     return &http.Transport{}, nil
 }
 
@@ -91,37 +91,37 @@ func createTransport(proxyAddr string) (*http.Transport, error) {
 func (p *Peer) Listen() {
     select {
         case _, ok := <-p.quitch:
-            if !ok{
+            if !ok {
                 p.quitch = make(chan struct{}) // if closed, then reopen channel
             }
         default:
     }
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", p.handler) // Registers the main handler for incoming websocket upgrade requests.
+    mux := http.NewServeMux()
+    mux.HandleFunc("/", p.handler) // Registers the main handler for incoming websocket upgrade requests.
 
-	srv := &http.Server{
-		Addr:    fmt.Sprintf(":%s", p.Port),
-		Handler: mux,
+    srv := &http.Server{
+        Addr:    fmt.Sprintf(":%s", p.Port),
+	Handler: mux,
+    }
+
+    go func() {
+	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
+	    log.Printf("HTTP server listen failed: %v", err)
 	}
-
-	go func() {
-		if err := srv.ListenAndServe(); err != http.ErrServerClosed {
-			log.Printf("HTTP server listen failed: %v", err)
-		}
-	}()
+    }()
 
     // Shuts down server when quitch gets closed
-	go func() {
-        select {
+    go func() {
+    select {
         case <-p.quitch:
-				shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownWait)
-				defer cancel()
+	    shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownWait)
+            defer cancel()
 
-				if err := srv.Shutdown(shutdownCtx); err != nil {
-					log.Printf("HTTP server shutdown failed: %v", err)
-				}
+	    if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Printf("HTTP server shutdown failed: %v", err)
+	    }
         }
-	}()
+    }()
 }
 
 // SetWriteConn designates a specific websocket connection, identified by its address, as the sole connection for sending messages.
@@ -173,19 +173,19 @@ func (p *Peer) Connect(address string) error {
 
     c, _, err := dialer.Dial(address, headers)
 
-	if err != nil {
-		return fmt.Errorf("failed to dial websocket: %v", err)
-	}
+    if err != nil {
+	return fmt.Errorf("failed to dial websocket: %v", err)
+    }
 
-	return p.handleNewConnection(c, address)
+    return p.handleNewConnection(c, address)
 }
 
 // ReadMessage attempts to read a single message from the specified websocket connection.
 // It locks the readMutex to ensure exclusive access to the connection during the read operation.
 func (p *Peer) readMessage(conn *websocket.Conn, address string) (string, error) {
-	if conn == nil {
-		return "", fmt.Errorf("invalid connection: connection is nil")
-	}
+    if conn == nil {
+	return "", fmt.Errorf("invalid connection: connection is nil")
+    }
     p.readMutex.Lock()
     defer p.readMutex.Unlock()
 
@@ -200,7 +200,7 @@ func (p *Peer) readMessage(conn *websocket.Conn, address string) (string, error)
         }
     }
 
-	return string(messageBytes), nil
+    return string(messageBytes), nil
 }
 
 // ReadMessages starts readMessage for every conn in readConns in the readRate interval.
@@ -233,9 +233,9 @@ func (p *Peer) ReadMessages(messageCh chan<- string, errorCh chan<- error) {
 // WriteMessage sends a message using the designated write connection.
 // It locks the writeMutex to ensure exclusive access to the connection during the write operation.
 func (p *Peer) WriteMessage(message string) error {
-	if p.writeConn == nil {
-		return fmt.Errorf("no write connection is set")
-	}
+    if p.writeConn == nil {
+	return fmt.Errorf("no write connection is set")
+    }
     p.writeMutex.Lock()
     defer p.writeMutex.Unlock()
 
@@ -264,17 +264,17 @@ func (p *Peer) Shutdown() {
     p.readConns = make(map[string]*websocket.Conn) // Resets the connection pool.
     p.writeConn = nil
 
-	close(p.quitch) // Signals the shutdown listener to initiate server shutdown.
+    close(p.quitch) // Signals the shutdown listener to initiate server shutdown.
 }
 
 // handler is the HTTP request handler for upgrading incoming requests to websocket connections.
 // It accepts a websocket connection and adds it to the pool of read connections.
 func (p *Peer) handler(w http.ResponseWriter, r *http.Request) {
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		log.Printf("failed to upgrade incoming connection: %v", err)
-		return
-	}
+    conn, err := upgrader.Upgrade(w, r, nil)
+    if err != nil {
+	log.Printf("failed to upgrade incoming connection: %v", err)
+	return
+    }
 
     if err := p.handleNewConnection(conn, r.Header.Get("X-Peer-Address")); err != nil {
         log.Printf("failed to handle new connection: %v", err)
