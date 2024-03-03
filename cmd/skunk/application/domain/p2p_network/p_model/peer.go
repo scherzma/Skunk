@@ -34,12 +34,13 @@ func GetPeerInstance() *Peer {
 			c_model.CREATE_GROUP:    &messageHandlers.CreateGroupHandler{},
 			c_model.INVITE_TO_GROUP: &messageHandlers.InviteToGroupHandler{},
 			c_model.LEAVE_GROUP:     &messageHandlers.LeaveGroupHandler{},
+			c_model.TEST_MESSAGE:    &messageHandlers.TestMessageHandler{},
 		}
 
 		peerInstance = &Peer{
 			Chats:      NetworkChats{},
 			Handlers:   handlers,
-			Connection: &networkMockAdapter.MockConnection{},
+			Connection: networkMockAdapter.GetMockConnection(),
 		}
 
 		peerInstance.Connection.SubscribeToNetwork(peerInstance)

@@ -12,6 +12,7 @@ const (
 	INVITE_TO_GROUP OperationType = iota
 	SEND_FILE       OperationType = iota
 	SET_USERNAME    OperationType = iota
+	TEST_MESSAGE    OperationType = iota
 )
 
 type Message struct {

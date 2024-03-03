@@ -4,13 +4,26 @@ import (
 	"fmt"
 	"github.com/scherzma/Skunk/cmd/skunk/application/domain/chat/c_model"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+	"sync"
 )
 
 // NetworkMockAdapter is a mock adapter for the network
 // It implements the NetworkConnection interface
 
+var (
+	mockConnection *MockConnection // singleton for testing purposes
+	once           sync.Once
+)
+
 type MockConnection struct {
 	subscribers []network.NetworkObserver
+}
+
+func GetMockConnection() *MockConnection {
+	once.Do(func() {
+		mockConnection = &MockConnection{}
+	})
+	return mockConnection
 }
 
 // SubscribeToNetwork is a mock function for the network
