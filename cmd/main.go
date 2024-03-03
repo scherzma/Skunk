@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"github.com/scherzma/Skunk/cmd/skunk/adapter/in/networkMockAdapter"
 	"github.com/scherzma/Skunk/cmd/skunk/application/domain/chat/c_model"
 	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_model"
@@ -69,8 +68,7 @@ func main() {
 		Operation: c_model.TEST_MESSAGE,
 	}
 
-	peer := p_model.GetPeerInstance()
-	fmt.Println(peer)
+	p_model.GetPeerInstance()
 
 	mockNetworkConnection := networkMockAdapter.GetMockConnection()
 	mockNetworkConnection.SendMockNetworkMessageToSubscribers(testMessage)

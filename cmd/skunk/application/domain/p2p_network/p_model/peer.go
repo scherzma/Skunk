@@ -18,40 +18,40 @@ type HandlerMap map[c_model.OperationType]messageHandlers.MessageHandler
 
 type Peer struct {
 	Chats      NetworkChats
-	Handlers   HandlerMap
-	Connection network.NetworkConnection
+	handlers   HandlerMap
+	connection network.NetworkConnection
 }
 
 func GetPeerInstance() *Peer {
 	once.Do(func() {
 		handlers := map[c_model.OperationType]messageHandlers.MessageHandler{
-			c_model.JOIN_GROUP:      &messageHandlers.JoinGroupHandler{},
-			c_model.SEND_FILE:       &messageHandlers.SendFileHandler{},
-			c_model.SYNC_REQUEST:    &messageHandlers.SyncRequestHandler{},
-			c_model.SYNC_RESPONSE:   &messageHandlers.SyncResponseHandler{},
-			c_model.SET_USERNAME:    &messageHandlers.SetUsernameHandler{},
-			c_model.SEND_MESSAGE:    &messageHandlers.SendMessageHandler{},
-			c_model.CREATE_GROUP:    &messageHandlers.CreateGroupHandler{},
-			c_model.INVITE_TO_GROUP: &messageHandlers.InviteToGroupHandler{},
-			c_model.LEAVE_GROUP:     &messageHandlers.LeaveGroupHandler{},
-			c_model.TEST_MESSAGE:    &messageHandlers.TestMessageHandler{},
+			c_model.JOIN_CHAT:      &messageHandlers.JoinChatHandler{},
+			c_model.SEND_FILE:      &messageHandlers.SendFileHandler{},
+			c_model.SYNC_REQUEST:   &messageHandlers.SyncRequestHandler{},
+			c_model.SYNC_RESPONSE:  &messageHandlers.SyncResponseHandler{},
+			c_model.SET_USERNAME:   &messageHandlers.SetUsernameHandler{},
+			c_model.SEND_MESSAGE:   &messageHandlers.SendMessageHandler{},
+			c_model.CREATE_CHAT:    &messageHandlers.CreateChatHandler{},
+			c_model.INVITE_TO_CHAT: &messageHandlers.InviteToChatHandler{},
+			c_model.LEAVE_CHAT:     &messageHandlers.LeaveChatHandler{},
+			c_model.TEST_MESSAGE:   &messageHandlers.TestMessageHandler{},
 		}
 
 		peerInstance = &Peer{
 			Chats:      NetworkChats{},
-			Handlers:   handlers,
-			Connection: networkMockAdapter.GetMockConnection(),
+			handlers:   handlers,
+			connection: networkMockAdapter.GetMockConnection(),
 		}
 
-		peerInstance.Connection.SubscribeToNetwork(peerInstance)
+		peerInstance.connection.SubscribeToNetwork(peerInstance)
 	})
 
 	return peerInstance
 }
 
 func (p *Peer) Notify(message c_model.Message) error {
-	if handler, exists := p.Handlers[message.Operation]; exists {
-		return handler.HandleMessage(message)
+	if handler, exists := p.handlers[message.Operation]; exists {
+		return handler.HandleMessage(message) // some form of authentication should be done here
 	}
 	return errors.New("invalid message operation")
 }
