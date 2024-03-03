@@ -133,16 +133,19 @@ func TestPeerReadMessages(t * testing.T) {
     peer4.SetWriteConn(address)
     peer5.SetWriteConn(address)
 
+    // Reading a message from each connection should work
     peer2.WriteMessage("Hello World!")
     peer3.WriteMessage("This is the story of my life")
     peer4.WriteMessage("Just do it!")
     peer5.WriteMessage("ABCDEFGHIJKLM")
 
+    // Reading messages from the same connections again should work
     peer2.WriteMessage("Hello Proxima Centauri!")
     peer3.WriteMessage("Are you alright?")
     peer4.WriteMessage("No I'm all left!")
     peer5.WriteMessage("XYZ")
 
+    // Reading multiple messages from the same connection should work
     peer2.WriteMessage("Recursive ...")
     peer2.WriteMessage("Recursive ...")
     peer2.WriteMessage("Recursive ...")
@@ -211,12 +214,14 @@ func TestPeerShutdown(t *testing.T){
 
     peerInstance.Shutdown()
 
+    // After shutdown you shoudn't be able to connect to the peer
     _, _, err := websocket.Dial(context.Background(), "ws://127.0.0.1:1111", nil)
     assert.Error(t, err)
 
     peerInstance.Listen()
     time.Sleep(1 * time.Second)
 
+    // After executing Listen you should be able to connect to the peer again
     conn, _, err := websocket.Dial(context.Background(), "ws://127.0.0.1:1111", nil)
     assert.NoError(t, err)
     assert.NotNil(t, conn)

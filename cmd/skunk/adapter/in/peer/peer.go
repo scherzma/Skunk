@@ -12,24 +12,21 @@ import (
     "github.com/gorilla/websocket"
 )
 
-// TO-DO: Limit Message Rate (per Minute and message speed)
-
 const (
-    MaxConns = 64                          // MaxConns defines the maximum number of concurrent websocket connections allowed.
-    connWait = 1 * time.Minute             // connWait specifies the timeout for connecting to another peer.
-    writeWait = 2 * time.Second            // writeWait specifies the timeout for writing a heartbeat message.
-    readWait = 1 * time.Second             // readWait specidifes the time for trying to read a message from a connection.
-    shutdownWait = 0 * time.Second         // shutdownWait specifies the wait time for shutting down the HTTP server. (optional for later)
-    readRateInterval = 2 * time.Second     // readRateInterval specifies the rate at which it will it is tried to read a message from every connection.
-    //heartbeatInterval = 2 * time.Minute    // heartbeatInterval specifies the time interval between consecutive hearbeat messages.
-    heartbeatInterval = 30 * time.Second
-    pongWait = (heartbeatInterval * 9) / 10
-    maxMessageSize = 512                   // maxMessageSize defines the maximum message size allowed from peer.
+    MaxConns = 64                           // MaxConns defines the maximum number of concurrent websocket connections allowed.
+    connWait = 1 * time.Minute              // connWait specifies the timeout for connecting to another peer.
+    writeWait = 2 * time.Second             // writeWait specifies the timeout for writing to another peer.
+    shutdownWait = 0 * time.Second          // shutdownWait specifies the wait time for shutting down the HTTP server. (optional for later)
+    readRateInterval = 2 * time.Second      // readRateInterval specifies the rate at which it will it is tried to read a message from every connection.
+    readWait = (readRateInterval * 9) / 10  // readWait specifies the time for trying to read a message from a connection. Needs to be less than readRateInterval
+    heartbeatInterval = 30 * time.Second    // heartbeatInterval specifies the time interval between consecutive heartbeat messages.
+    pongWait = (heartbeatInterval * 9) / 10 // pongWait specifies the time a ping response can need before the connection gets classified as closed during an heartbeat. Needs to be less than heartbeatInteval
+    maxMessageSize = 512                    // maxMessageSize defines the maximum message size allowed from peer. (bytes)
 )
 
 var upgrader = websocket.Upgrader{
-    ReadBufferSize:  1024,
-    WriteBufferSize: 1024,
+    ReadBufferSize:  maxMessageSize,
+    WriteBufferSize: maxMessageSize,
 }
 
 // Peer encapsulates the state and functionality for a network peer, including its connections,
@@ -68,6 +65,7 @@ func NewPeer(hostname, port, proxyAddr string) (*Peer, error) {
 		},
     }
 
+    // starts the heartbeat mechanism
     p.startHeartbeat()
 
     return &p, nil
@@ -94,7 +92,7 @@ func (p *Peer) Listen() {
     select {
         case _, ok := <-p.quitch:
             if !ok{
-                p.quitch = make(chan struct{}) // if closed then reopen channel
+                p.quitch = make(chan struct{}) // if closed, then reopen channel
             }
         default:
     }
@@ -112,6 +110,7 @@ func (p *Peer) Listen() {
 		}
 	}()
 
+    // Shuts down server when quitch gets closed
 	go func() {
         select {
         case <-p.quitch:
@@ -128,9 +127,6 @@ func (p *Peer) Listen() {
 // SetWriteConn designates a specific websocket connection, identified by its address, as the sole connection for sending messages.
 // It verifies that the peer is currently connected to the specified address before setting the connection.
 func (p *Peer) SetWriteConn(address string) error {
-    p.mapRWLock.RLock()
-    defer p.mapRWLock.RUnlock()
-
     if len(p.readConns) == 0 {
          return fmt.Errorf("peer is not connected to any address")
     }
@@ -139,7 +135,9 @@ func (p *Peer) SetWriteConn(address string) error {
         return fmt.Errorf("peer is not connected to address: %s", address) 
     }
 
+    p.mapRWLock.RLock()
     p.writeConn = p.readConns[address]
+    p.mapRWLock.RUnlock()
     return nil
 }
 
@@ -169,6 +167,7 @@ func (p *Peer) Connect(address string) error {
         }
     }
 
+    // Set peer address as header so that the other peer knows at which port we are listening
     headers := http.Header{}
     headers.Add("X-Peer-Address", p.Address)
 
@@ -183,19 +182,18 @@ func (p *Peer) Connect(address string) error {
 
 // ReadMessage attempts to read a single message from the specified websocket connection.
 // It locks the readMutex to ensure exclusive access to the connection during the read operation.
-func (p *Peer) readMessage(conn *websocket.Conn) (string, error) {
-    p.readMutex.Lock()
-    defer p.readMutex.Unlock()
-
+func (p *Peer) readMessage(conn *websocket.Conn, address string) (string, error) {
 	if conn == nil {
 		return "", fmt.Errorf("invalid connection: connection is nil")
 	}
+    p.readMutex.Lock()
+    defer p.readMutex.Unlock()
 
     conn.SetReadLimit(maxMessageSize)
     conn.SetReadDeadline(time.Now().Add(readWait))
     _, messageBytes, err := conn.ReadMessage()
     if err != nil {
-        if p.checkConnIsClosed(conn, err) {
+        if p.checkConnIsClosed(address, err) {
             return "", err
         } else {
             return "", nil
@@ -205,18 +203,21 @@ func (p *Peer) readMessage(conn *websocket.Conn) (string, error) {
 	return string(messageBytes), nil
 }
 
+// ReadMessages starts readMessage for every conn in readConns in the readRate interval.
 func (p *Peer) ReadMessages(messageCh chan<- string, errorCh chan<- error) {
     ticker := time.NewTicker(readRateInterval)
     go func(){
         for {
             select{
                 case <-ticker.C:
-                    for _, conn := range p.readConns {
+                    for addr, conn := range p.readConns {
                         go func() {
-                            msg, err := p.readMessage(conn)
+                            msg, err := p.readMessage(conn, addr)
                             if err != nil {
                                 errorCh<-err
-                            } else if msg != "" {
+                            } else if msg != "" { // "" can happen when an error occurs when reading from 
+                                                  // the connection but the error is not due to the 
+                                                  // connection being closed.
                                 messageCh<-msg
                             }
                         }()
@@ -232,19 +233,19 @@ func (p *Peer) ReadMessages(messageCh chan<- string, errorCh chan<- error) {
 // WriteMessage sends a message using the designated write connection.
 // It locks the writeMutex to ensure exclusive access to the connection during the write operation.
 func (p *Peer) WriteMessage(message string) error {
-    p.writeMutex.Lock()
-    defer p.writeMutex.Unlock()
-
 	if p.writeConn == nil {
 		return fmt.Errorf("no write connection is set")
 	}
+    p.writeMutex.Lock()
+    defer p.writeMutex.Unlock()
 
+    // Append From p.Address: to message so that the other peers knows which peer sent him the message.
     fullMessage := fmt.Sprintf("From %s: %s", p.Address, message)
 
     p.writeConn.SetWriteDeadline(time.Now().Add(writeWait))
     err := p.writeConn.WriteMessage(websocket.TextMessage, []byte(fullMessage))
     if err != nil {
-        p.checkConnIsClosed(p.writeConn, err)
+        p.checkConnIsClosed(p.writeConn.RemoteAddr().String(), err)
         return err
     }
 
@@ -255,12 +256,12 @@ func (p *Peer) WriteMessage(message string) error {
 // and signaling the quitch channel to stop the HTTP server.
 func (p *Peer) Shutdown() {
     p.mapRWLock.RLock()
+    defer p.mapRWLock.RUnlock()
+
     for _, conn := range p.readConns {
         conn.Close()
     }
     p.readConns = make(map[string]*websocket.Conn) // Resets the connection pool.
-    p.mapRWLock.RUnlock()
-
     p.writeConn = nil
 
 	close(p.quitch) // Signals the shutdown listener to initiate server shutdown.
@@ -284,14 +285,13 @@ func (p *Peer) handler(w http.ResponseWriter, r *http.Request) {
 // handleNewConnection adds a newly established websocket connection to the readConns map.
 // It ensures that the total number of connections does not exceed the maximum allowed.
 func (p *Peer) handleNewConnection(conn *websocket.Conn, address string) error {
-    p.mapRWLock.Lock()
-    defer p.mapRWLock.Unlock()
-
     if len(p.readConns) >= MaxConns {
         return fmt.Errorf("maximum number of connections reached: %d", MaxConns)
     }
 
+    p.mapRWLock.Lock()
     p.readConns[address] = conn
+    p.mapRWLock.Unlock()
     return nil
 }
 
@@ -320,16 +320,16 @@ func (p *Peer) sendHeartbeatToAll() {
 
     for address, conn := range p.readConns {
         if conn == nil {
-           p.mapRWLock.Lock()
-           delete(p.readConns, address)
-           p.mapRWLock.Unlock()
-           continue;
-        }
-        conn.SetWriteDeadline(time.Now().Add(pongWait))
-        if err := conn.WriteMessage(websocket.PingMessage, []byte{}); err != nil {
             p.mapRWLock.Lock()
-            delete(p.readConns, address) // Optionally, we could try to reinitialize the connection here.
+            delete(p.readConns, address)
             p.mapRWLock.Unlock()
+        } else {
+            conn.SetWriteDeadline(time.Now().Add(pongWait))
+            if err := conn.WriteMessage(websocket.PingMessage, []byte{}); err != nil {
+                p.mapRWLock.Lock()
+                delete(p.readConns, address) // Optionally, we could try to reinitialize the connection here.
+                p.mapRWLock.Unlock()
+            }
         }
     }
 }
@@ -337,30 +337,20 @@ func (p *Peer) sendHeartbeatToAll() {
 // isConnectedTo checks if there is an existing websocket connection to the specified address.
 func (p *Peer) isConnectedTo(address string) bool {
     p.mapRWLock.RLock()
-    defer p.mapRWLock.RUnlock()
     _, ok := p.readConns[address]
+    p.mapRWLock.RUnlock()
     return ok
 }
 
 // checkConnIsClosed evaluates if an error during a read or write operation was due to the connection being closed.
 // If so, it removes the connection from the readConns map to prevent furter use.
-func (p *Peer) checkConnIsClosed(conn *websocket.Conn, err error) bool {
-	if conn != nil && websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
+func (p *Peer) checkConnIsClosed(address string, err error) bool {
+    if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway){
         p.mapRWLock.Lock()
-        delete(p.readConns, conn.RemoteAddr().String())
+        delete(p.readConns, address)
         p.mapRWLock.Unlock()
         return true
-	} else if conn == nil {
-        p.mapRWLock.Lock()
-        for addr, c := range p.readConns {
-            if conn == c {
-                delete(p.readConns, addr)
-                break
-            }
-        }
-        p.mapRWLock.Unlock()
-        return true
-    }
+	} 
     return false
 }
 
