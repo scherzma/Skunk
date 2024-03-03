@@ -2,43 +2,55 @@ package p_model
 
 import (
 	"errors"
-	"github.com/emirpasic/gods/maps/treemap"
+	"github.com/scherzma/Skunk/cmd/skunk/adapter/in/networkMockAdapter"
 	"github.com/scherzma/Skunk/cmd/skunk/application/domain/chat/c_model"
+	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_service/messageHandlers"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+	"sync"
 )
 
-type MessageHandler interface {
-	HandleMessage(message c_model.Message) error
-}
+var (
+	peerInstance *Peer
+	once         sync.Once
+)
 
-type HandlerMap map[c_model.OperationType]MessageHandler
+type HandlerMap map[c_model.OperationType]messageHandlers.MessageHandler
 
 type Peer struct {
-	Messages *treemap.Map
-	Handlers HandlerMap
+	Chats      NetworkChats
+	Handlers   HandlerMap
+	Connection network.NetworkConnection
 }
 
-func NewPeer() *Peer {
-	return &Peer{
-		Messages: treemap.NewWith(MessageComparator),
-		Handlers: make(HandlerMap),
-	}
+func GetPeerInstance() *Peer {
+	once.Do(func() {
+		handlers := map[c_model.OperationType]messageHandlers.MessageHandler{
+			c_model.JOIN_GROUP:      &messageHandlers.JoinGroupHandler{},
+			c_model.SEND_FILE:       &messageHandlers.SendFileHandler{},
+			c_model.SYNC_REQUEST:    &messageHandlers.SyncRequestHandler{},
+			c_model.SYNC_RESPONSE:   &messageHandlers.SyncResponseHandler{},
+			c_model.SET_USERNAME:    &messageHandlers.SetUsernameHandler{},
+			c_model.SEND_MESSAGE:    &messageHandlers.SendMessageHandler{},
+			c_model.CREATE_GROUP:    &messageHandlers.CreateGroupHandler{},
+			c_model.INVITE_TO_GROUP: &messageHandlers.InviteToGroupHandler{},
+			c_model.LEAVE_GROUP:     &messageHandlers.LeaveGroupHandler{},
+		}
+
+		peerInstance = &Peer{
+			Chats:      NetworkChats{},
+			Handlers:   handlers,
+			Connection: &networkMockAdapter.MockConnection{},
+		}
+
+		peerInstance.Connection.SubscribeToNetwork(peerInstance)
+	})
+
+	return peerInstance
 }
 
-func MessageComparator(a, b interface{}) int {
-	aM, ok := a.(c_model.Message)
-	if !ok {
-		return 0
-	}
-	bM, ok := b.(c_model.Message)
-	if !ok {
-		return 0
-	}
-	return int(aM.Timestamp - bM.Timestamp)
-}
-
-func (p *Peer) RecieveMessage(message c_model.Message) error {
-	if handler, ok := p.Handlers[message.Operation]; ok {
+func (p *Peer) Notify(message c_model.Message) error {
+	if handler, exists := p.Handlers[message.Operation]; exists {
 		return handler.HandleMessage(message)
 	}
-	return errors.New("Invalid message operation")
+	return errors.New("invalid message operation")
 }

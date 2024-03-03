@@ -1,4 +1,4 @@
-package port
+package store
 
 import "github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_model"
 

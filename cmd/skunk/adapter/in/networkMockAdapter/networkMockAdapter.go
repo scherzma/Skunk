@@ -3,24 +3,24 @@ package networkMockAdapter
 import (
 	"fmt"
 	"github.com/scherzma/Skunk/cmd/skunk/application/domain/chat/c_model"
-	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_model"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
 )
 
 // NetworkMockAdapter is a mock adapter for the network
 // It implements the NetworkConnection interface
 
 type MockConnection struct {
-	subscribers []p_model.NetworkObserver
+	subscribers []network.NetworkObserver
 }
 
 // SubscribeToNetwork is a mock function for the network
-func (m *MockConnection) SubscribeToNetwork(observer p_model.NetworkObserver) error {
+func (m *MockConnection) SubscribeToNetwork(observer network.NetworkObserver) error {
 	m.subscribers = append(m.subscribers, observer)
 	return nil
 }
 
 // UnsubscribeFromNetwork is a mock function for the network
-func (m *MockConnection) UnsubscribeFromNetwork(observer p_model.NetworkObserver) error {
+func (m *MockConnection) UnsubscribeFromNetwork(observer network.NetworkObserver) error {
 	for i, sub := range m.subscribers {
 		if sub == observer {
 			m.subscribers = append(m.subscribers[:i], m.subscribers[i+1:]...)

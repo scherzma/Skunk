@@ -3,14 +3,13 @@ package storage
 import (
 	"database/sql"
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/scherzma/Skunk/cmd/skunk/application/port"
 	"log"
 )
 
 type StoreMessageQueueSQLite struct {
 }
 
-func (s *StoreMessageQueueSQLite) StoreMessageQueue(messageQueue port.StoreMessageQueue) error {
+func (s *StoreMessageQueueSQLite) StoreMessageQueue(string2 string) error {
 	db, err := sql.Open("sqlite3", "./yourdatabase.db")
 	if err != nil {
 		log.Fatal(err)

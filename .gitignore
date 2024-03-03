@@ -22,3 +22,5 @@ go.work
 
 # Because Mac XD
 .DS_Store
+
+.idea

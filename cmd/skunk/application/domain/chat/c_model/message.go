@@ -19,6 +19,6 @@ type Message struct {
 	Timestamp int64
 	Content   string
 	From      User // should probably use User ID instead of a direct reference
-	To        User // should probably use User ID instead of a direct reference
+	To        User // shoud honestly be anything but a user... like a chat...
 	Operation OperationType
 }
