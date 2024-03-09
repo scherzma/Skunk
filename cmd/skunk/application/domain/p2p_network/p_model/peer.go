@@ -14,11 +14,9 @@ var (
 	once         sync.Once
 )
 
-type HandlerMap map[c_model.OperationType]messageHandlers.MessageHandler
-
 type Peer struct {
 	Chats      NetworkChats
-	handlers   HandlerMap
+	handlers   map[c_model.OperationType]messageHandlers.MessageHandler
 	connection network.NetworkConnection
 }
 
@@ -35,6 +33,7 @@ func GetPeerInstance() *Peer {
 			c_model.INVITE_TO_CHAT: &messageHandlers.InviteToChatHandler{},
 			c_model.LEAVE_CHAT:     &messageHandlers.LeaveChatHandler{},
 			c_model.TEST_MESSAGE:   &messageHandlers.TestMessageHandler{},
+			c_model.TEST_MESSAGE_2: &messageHandlers.TestMessageHandler2{},
 		}
 
 		peerInstance = &Peer{

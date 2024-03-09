@@ -62,10 +62,10 @@ func main() {
 	testMessage := c_model.Message{
 		Id:        "8888",
 		Timestamp: 1633029445,
-		Content:   "Hello World!",
+		Content:   "Hello asdfasdfWorld!",
 		From:      user2,
 		To:        user4,
-		Operation: c_model.TEST_MESSAGE,
+		Operation: c_model.TEST_MESSAGE_2,
 	}
 
 	p_model.GetPeerInstance()
