@@ -1,5 +1,4 @@
 package test
-
 import (
     "fmt"
     "time"
@@ -10,6 +9,7 @@ import (
     "nhooyr.io/websocket"
 
 	"github.com/scherzma/Skunk/cmd/skunk/adapter/in/peer"
+	"github.com/scherzma/Skunk/cmd/skunk/adapter/in/tor"
 )
 
 const (
@@ -19,7 +19,7 @@ const (
 // In the future this should include tests with a proxy
 
 func TestNewPeer(t *testing.T) {
-    peerInstance, err := peer.NewPeer("127.0.0.1", "8080", "")
+    peerInstance, err := peer.NewPeer("127.0.0.1", "8080", "", "")
     assert.NoError(t, err)
     assert.NotNil(t, peerInstance)
     assert.Equal(t, peerInstance.Hostname, "127.0.0.1")
@@ -28,11 +28,11 @@ func TestNewPeer(t *testing.T) {
 }
 
 func TestListen(t *testing.T) {
-    peerInstance, err := peer.NewPeer("127.0.0.1", "8080", "")
+    peerInstance, err := peer.NewPeer("127.0.0.1", "8080", "", "")
     defer peerInstance.Shutdown()
     assert.NoError(t, err)
 
-    peerInstance.Listen()
+    peerInstance.Listen(nil)
     time.Sleep(waitTime)
 
     // Connecting to peer address should work
@@ -44,13 +44,13 @@ func TestListen(t *testing.T) {
 }
 
 func TestConnect(t *testing.T) {
-    peer1, err := peer.NewPeer("127.0.0.1", "1234", "")
+    peer1, err := peer.NewPeer("127.0.0.1", "1234", "", "")
     defer peer1.Shutdown()
-    peer2, err := peer.NewPeer("127.0.0.1", "4321", "")
+    peer2, err := peer.NewPeer("127.0.0.1", "4321", "", "")
     defer peer2.Shutdown()
 
-    peer1.Listen()
-    peer2.Listen()
+    peer1.Listen(nil)
+    peer2.Listen(nil)
     time.Sleep(waitTime)
 
     // First connect from peer1 to peer2.
@@ -75,12 +75,12 @@ func TestConnect(t *testing.T) {
 }
 
 func TestPeerSetWriteConn(t *testing.T) {
-    peer1, _ := peer.NewPeer("127.0.0.1", "1111", "")
+    peer1, _ := peer.NewPeer("127.0.0.1", "1111", "", "")
     defer peer1.Shutdown()
-    peer2, _ := peer.NewPeer("127.0.0.1", "10000", "")
+    peer2, _ := peer.NewPeer("127.0.0.1", "10000", "", "")
     defer peer2.Shutdown()
 
-    peer1.Listen()
+    peer1.Listen(nil)
     time.Sleep(waitTime)
 
     err := peer2.Connect(peer1.Address)
@@ -104,18 +104,18 @@ func TestPeerSetWriteConn(t *testing.T) {
 }
 
 func TestPeerReadMessages(t * testing.T) {
-    peer1, _ := peer.NewPeer("127.0.0.1", "2222", "")
+    peer1, _ := peer.NewPeer("127.0.0.1", "2222", "", "")
     defer peer1.Shutdown()
-    peer2, _ := peer.NewPeer("127.0.0.1", "3333", "")
+    peer2, _ := peer.NewPeer("127.0.0.1", "3333", "", "")
     defer peer2.Shutdown()
-    peer3, _ := peer.NewPeer("127.0.0.1", "4444", "")
+    peer3, _ := peer.NewPeer("127.0.0.1", "4444", "", "")
     defer peer3.Shutdown()
-    peer4, _ := peer.NewPeer("127.0.0.1", "5555", "")
+    peer4, _ := peer.NewPeer("127.0.0.1", "5555", "", "")
     defer peer4.Shutdown()
-    peer5, _ := peer.NewPeer("127.0.0.1", "6666", "")
+    peer5, _ := peer.NewPeer("127.0.0.1", "6666", "", "")
     defer peer5.Shutdown()
 
-    peer1.Listen()
+    peer1.Listen(nil)
     time.Sleep(1 * time.Second)
 
     address := peer1.Address
@@ -163,12 +163,12 @@ func TestPeerReadMessages(t * testing.T) {
 }
 
 func TestPeerWriteMessage(t *testing.T){
-    peer1, _ := peer.NewPeer("127.0.0.1", "8888", "")
+    peer1, _ := peer.NewPeer("127.0.0.1", "8888", "", "")
     defer peer1.Shutdown()
-    peer2, _ := peer.NewPeer("127.0.0.1", "7890", "")
+    peer2, _ := peer.NewPeer("127.0.0.1", "7890", "", "")
     defer peer2.Shutdown()
 
-    peer1.Listen()
+    peer1.Listen(nil)
     time.Sleep(1 * time.Second)
 
     peer2.Connect(peer1.Address)
@@ -206,11 +206,11 @@ func TestPeerWriteMessage(t *testing.T){
 }
 
 func TestPeerShutdown(t *testing.T){
-    peerInstance, _ := peer.NewPeer("127.0.0.1", "1111", "")
+    peerInstance, _ := peer.NewPeer("127.0.0.1", "1111", "", "")
     defer peerInstance.Shutdown()
 
-    peerInstance.Listen()
-    time.Sleep(1 * time.Second)
+    peerInstance.Listen(nil)
+    time.Sleep(waitTime)
 
     peerInstance.Shutdown()
 
@@ -218,8 +218,8 @@ func TestPeerShutdown(t *testing.T){
     _, _, err := websocket.Dial(context.Background(), "ws://127.0.0.1:1111", nil)
     assert.Error(t, err)
 
-    peerInstance.Listen()
-    time.Sleep(1 * time.Second)
+    peerInstance.Listen(nil)
+    time.Sleep(waitTime)
 
     // After executing Listen you should be able to connect to the peer again
     conn, _, err := websocket.Dial(context.Background(), "ws://127.0.0.1:1111", nil)
@@ -230,15 +230,15 @@ func TestPeerShutdown(t *testing.T){
 }
 
 func TestPeerHeartbeat(t *testing.T){
-    peer1, _ := peer.NewPeer("127.0.0.1", "1111", "")
+    peer1, _ := peer.NewPeer("127.0.0.1", "1111", "", "")
     defer peer1.Shutdown()
-    peer2, _ := peer.NewPeer("127.0.0.1", "2222", "")
+    peer2, _ := peer.NewPeer("127.0.0.1", "2222", "", "")
 
-    peer1.Listen()
-    time.Sleep(1 * time.Second)
+    peer1.Listen(nil)
+    time.Sleep(waitTime)
 
     peer2.Connect(peer1.Address)
-    time.Sleep(1 * time.Second)
+    time.Sleep(waitTime)
 
     peer2.Shutdown()
     time.Sleep(70 * time.Second)
@@ -247,3 +247,43 @@ func TestPeerHeartbeat(t *testing.T){
     err := peer1.SetWriteConn(peer2.Address)
     assert.Error(t, err)
 }
+
+func TestPeerTor(t *testing.T) {
+    torInstance, _ := tor.StartTor("9052", "data-dir1")
+    onionID, onionOne, _ := tor.StartHiddenService(torInstance, "1110", "1111")
+
+    peerInstanceOne, err := peer.NewPeer(onionID, "1110", "1111", "127.0.0.1:9052")
+    assert.NoError(t, err)
+    defer peerInstanceOne.Shutdown()
+
+    peerInstanceOne.Listen(onionOne)
+    time.Sleep(10*waitTime)
+
+
+    torInstanceTwo, _ := tor.StartTor("9053", "data-dir2")
+    onionIDTwo, _, _ := tor.StartHiddenService(torInstanceTwo, "2221", "2222")
+    time.Sleep(1*time.Minute)
+
+    peerInstanceTwo, _ := peer.NewPeer(onionIDTwo, "2221", "2222", "127.0.0.1:9053")
+    defer peerInstanceTwo.Shutdown()
+
+    err = peerInstanceTwo.Connect(peerInstanceOne.Address)
+    assert.NoError(t, err)
+
+    tor.StopTor(torInstance)
+    tor.StopTor(torInstanceTwo)
+}
+
+    // dialCtx, dialCancel := context.WithTimeout(context.Background(), time.Minute)
+	// defer dialCancel()
+    // dialerOne, _ := torInstance.Dialer(dialCtx, nil)
+    // transportOne := &http.Transport{DialContext: dialerOne.DialContext}
+
+
+    // peerInstanceOne, err := peer.NewPeer(onionID, hiddenServicePortOne, "", transportOne)
+
+
+    // dialerTwo, _ := torInstance.Dialer(nil, nil)
+    // transportTwo := &http.Transport{DialContext: dialerTwo.DialContext}
+    
+    // peerInstanceTwo, _ := peer.NewPeer(onionIDTwo, hiddenServicePortTwo, "", transportTwo)

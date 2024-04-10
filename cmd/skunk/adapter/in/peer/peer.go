@@ -4,6 +4,7 @@ import (
     "context"
     "fmt"
     "log"
+    "net"
     "net/http"
     "sync"
     "time"
@@ -38,6 +39,7 @@ type Peer struct {
     writeConn  *websocket.Conn              // writeConn is a dedicated websocket connection reserved for writing messages.
     Hostname   string                       // Hostname specifies the network address of the peer.
     Port       string                       // Port on which the peer listens for incoming connections.
+    LocalPort  string
     Address    string                       // Address specifies the complete websocket address: ws://Hostname:Port
     ProxyAddr  string                       // ProxyAddr specifies the address of SOCKS5 proxy, if used for connections.
     readMutex  sync.Mutex                   // readMutex provides concurrent access control for readConns.
@@ -47,17 +49,20 @@ type Peer struct {
 
 // NewPeer initializes a new Peer instance with the given network settings.
 // It also configures the peer's HTTP client for optimal proxy support.
-func NewPeer(hostname, port, proxyAddr string) (*Peer, error) {
+func NewPeer(hostname string, localPort string, remotePort string, proxyAddr string) (*Peer, error) {
     transport, err := createTransport(proxyAddr) // Attempts to create an HTTP transport, optionally configured with a SOCKS5 proxy.
     if err != nil {
         return nil, fmt.Errorf("failed to create SOCKS5 dialer: %w", err)
     }
 
+    fmt.Printf("Hostname: %s\n", hostname)
+    fmt.Printf("Port: %s\n", remotePort)
+
     p := Peer{
         readConns: make(map[string]*websocket.Conn),
 	Hostname:  hostname,
-	port:      port,
-        Address:   fmt.Sprintf("ws://%s:%s", hostname, port),
+	Port:      localPort,
+    Address:   fmt.Sprintf("ws://%s:%s", hostname, remotePort),
 	ProxyAddr: proxyAddr,
 	quitch:    make(chan struct{}),
 	client: &http.Client{
@@ -76,16 +81,17 @@ func NewPeer(hostname, port, proxyAddr string) (*Peer, error) {
 func createTransport(proxyAddr string) (*http.Transport, error) {
     if proxyAddr != "" {
         dialer, err := proxy.SOCKS5("tcp", proxyAddr, nil, nil)
-	if err != nil {
-	    return nil, err
-	}
+        if err != nil {
+            return nil, err
+        }
 	    return &http.Transport{
-		Dial: dialer.Dial,
-	}, nil
+            Dial: dialer.Dial,
+        }, nil
     }
     return &http.Transport{}, nil
 }
 
+/*
 // Listen sets up an HTTP server and starts listening on the configured port for incoming websocket connections.
 // It also starts a goroutine for graceful shutdown handling upon receiving a signal on the quitch channel.
 func (p *Peer) Listen() {
@@ -100,26 +106,73 @@ func (p *Peer) Listen() {
     mux.HandleFunc("/", p.handler) // Registers the main handler for incoming websocket upgrade requests.
 
     srv := &http.Server{
-        Addr:    fmt.Sprintf(":%s", p.Port),
-	Handler: mux,
+        // Addr:    fmt.Sprintf(":%s", p.LocalPort),
+        Addr:    ":" + p.Port,
+        Handler: mux,
     }
 
     go func() {
-	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
-	    log.Printf("HTTP server listen failed: %v", err)
-	}
+        if err := srv.ListenAndServe(); err != http.ErrServerClosed {
+            log.Printf("HTTP server listen failed: %v", err)
+        }
     }()
 
     // Shuts down server when quitch gets closed
     go func() {
     select {
+    case <-p.quitch:
+        shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownWait)
+        defer cancel()
+
+        if err := srv.Shutdown(shutdownCtx); err != nil {
+            log.Printf("HTTP server shutdown failed: %v", err)
+        }
+    }
+    }()
+}
+*/
+
+func (p *Peer) Listen(l net.Listener) {
+    select {
+    case _, ok := <-p.quitch:
+        if !ok {
+            p.quitch = make(chan struct{}) // if closed, then reopen channel
+        }
+    default:
+    }
+
+    mux := http.NewServeMux()
+    mux.HandleFunc("/", p.handler) // Registers the main handler.
+
+    srv := &http.Server{
+        Handler: mux,
+    }
+
+    go func() {
+        var err error
+        if l != nil {
+            // Use the provided listener
+            err = srv.Serve(l)
+        } else {
+            // Listen on the specified port if no listener is provided
+            srv.Addr = ":" + p.Port
+            err = srv.ListenAndServe()
+        }
+        if err != http.ErrServerClosed {
+            log.Printf("HTTP server listen failed: %v", err)
+        }
+    }()
+
+    // Shuts down server when quitch gets closed
+    go func() {
+        select {
         case <-p.quitch:
-	    shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownWait)
+            shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
             defer cancel()
 
-	    if err := srv.Shutdown(shutdownCtx); err != nil {
-		log.Printf("HTTP server shutdown failed: %v", err)
-	    }
+            if err := srv.Shutdown(shutdownCtx); err != nil {
+                log.Printf("HTTP server shutdown failed: %v", err)
+            }
         }
     }()
 }
@@ -157,7 +210,6 @@ func (p *Peer) Connect(address string) error {
     }
 
     dialer := websocket.Dialer{
-        Proxy: http.ProxyFromEnvironment,
         HandshakeTimeout: connWait,
     }
 
@@ -171,10 +223,11 @@ func (p *Peer) Connect(address string) error {
     headers := http.Header{}
     headers.Add("X-Peer-Address", p.Address)
 
+    fmt.Printf("Address: %s", address)
     c, _, err := dialer.Dial(address, headers)
 
     if err != nil {
-	return fmt.Errorf("failed to dial websocket: %v", err)
+        return fmt.Errorf("failed to dial websocket: %v", err)
     }
 
     return p.handleNewConnection(c, address)

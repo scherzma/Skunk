@@ -4,15 +4,27 @@ import (
     "context"
     "encoding/hex"
     "encoding/json"
-    "github.com/cretz/bine/torutil/ed25519"
+    "fmt"
     "os"
+    "strconv"
     "time"
 
     "github.com/cretz/bine/tor"
+    "github.com/cretz/bine/torutil/ed25519"
 )
 
-func StartTor() (*tor.Tor, error) {
-    t, err := tor.Start(nil, &tor.StartConf{DataDir: "tor-data"})
+func StartTor(socksPort string, dataDir string) (*tor.Tor, error) {
+    if dataDir == "" {
+        dataDir = "tor-data"
+    }
+    torConfig := &tor.StartConf{
+        NoAutoSocksPort: true,
+        ExtraArgs: []string{"--SocksPort", socksPort, "--SocksPolicy", "accept 127.0.0.1"},
+        DataDir: dataDir,
+        EnableNetwork: true,
+    }
+
+    t, err := tor.Start(nil, torConfig)
     if err != nil {
         return nil, err
     }
@@ -20,21 +32,30 @@ func StartTor() (*tor.Tor, error) {
     return t, nil
 }
 
-func StartHiddenService(t *tor.Tor) (string, error) {
-    privateKey, err := getPrivateKey()
+func StartHiddenService(t *tor.Tor, localPort string, remotePort string) (string, *tor.OnionService, error) {
+    privateKey, err := getPrivateKey(t)
+    if err != nil {
+        return "", nil, err
+    }
+
+    remotePortInt, err := strconv.Atoi(remotePort)
+    if err != nil {
+        return "", nil, err
+    }
+    localPortInt, err := strconv.Atoi(localPort)
 
     listenCtx, listenCancel := context.WithTimeout(context.Background(), 1*time.Minute)
     defer listenCancel()
 
-    onion, err := t.Listen(listenCtx, &tor.ListenConf{Version3: true, Key: privateKey, RemotePorts: []int{80}})
+    onion, err := t.Listen(listenCtx, &tor.ListenConf{Version3: true, Key: privateKey, LocalPort: localPortInt, RemotePorts: []int{remotePortInt}})
     if err != nil {
-        return "", err
+        return "", nil, err
     }
 
-    return onion.ID, err
+    return onion.ID, onion, err
 }
 
-func StopHiddenService(t *tor.Tor) {
+func StopTor(t *tor.Tor) {
     t.Close()
 }
 
@@ -63,8 +84,10 @@ func loadServiceInfo() (string, error) {
     return key, nil
 }
 
-func getPrivateKey() (ed25519.PrivateKey, error) {
-    if _, err := os.Stat("serviceinfo.json"); err == nil {
+func getPrivateKey(t *tor.Tor) (ed25519.PrivateKey, error) {
+    path := fmt.Sprintf("%s/serviceinfo.json", t.DataDir)
+
+    if _, err := os.Stat(path); err == nil {
         privateKeyString, err := loadServiceInfo()
         if err != nil {
             return nil, err
