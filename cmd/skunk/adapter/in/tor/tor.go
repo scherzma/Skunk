@@ -1,64 +1,66 @@
 package tor
 
 import (
-    "context"
-    "encoding/hex"
-    "encoding/json"
-    "fmt"
-    "os"
-    "strconv"
-    "time"
+	"context"
+	"os"
+	"strconv"
+	"time"
 
-    "github.com/cretz/bine/tor"
-    "github.com/cretz/bine/torutil/ed25519"
+	"github.com/cretz/bine/tor"
 )
 
 func StartTor(socksPort string, dataDir string) (*tor.Tor, error) {
-    if dataDir == "" {
-        dataDir = "tor-data"
-    }
-    torConfig := &tor.StartConf{
-        NoAutoSocksPort: true,
-        ExtraArgs: []string{"--SocksPort", socksPort, "--SocksPolicy", "accept 127.0.0.1"},
-        DataDir: dataDir,
-        EnableNetwork: true,
-    }
+	if dataDir == "" {
+		dataDir = "tor-data"
+	}
+	torConfig := &tor.StartConf{
+		NoAutoSocksPort: true,
+		// Should work without setting the SocksPolicy
+		// Test from different devices!!
+		// ExtraArgs:       []string{"--SocksPort", socksPort, "--SocksPolicy", "accept 127.0.0.1"},
+		ExtraArgs: []string{"--SocksPort", socksPort},
+		DataDir:   dataDir,
+		// EnableNetwork:   true,
+		DebugWriter: os.Stdout,
+	}
 
-    t, err := tor.Start(nil, torConfig)
-    if err != nil {
-        return nil, err
-    }
+	t, err := tor.Start(nil, torConfig)
+	if err != nil {
+		return nil, err
+	}
 
-    return t, nil
+	return t, nil
 }
 
 func StartHiddenService(t *tor.Tor, localPort string, remotePort string) (string, *tor.OnionService, error) {
-    privateKey, err := getPrivateKey(t)
-    if err != nil {
-        return "", nil, err
-    }
+	// privateKey, err := getPrivateKey(t)
+	// if err != nil {
+	//     return "", nil, err
+	// }
 
-    remotePortInt, err := strconv.Atoi(remotePort)
-    if err != nil {
-        return "", nil, err
-    }
-    localPortInt, err := strconv.Atoi(localPort)
+	remotePortInt, err := strconv.Atoi(remotePort)
+	if err != nil {
+		return "", nil, err
+	}
+	localPortInt, err := strconv.Atoi(localPort)
 
-    listenCtx, listenCancel := context.WithTimeout(context.Background(), 1*time.Minute)
-    defer listenCancel()
+	listenCtx, listenCancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer listenCancel()
 
-    onion, err := t.Listen(listenCtx, &tor.ListenConf{Version3: true, Key: privateKey, LocalPort: localPortInt, RemotePorts: []int{remotePortInt}})
-    if err != nil {
-        return "", nil, err
-    }
+	// onion, err := t.Listen(listenCtx, &tor.ListenConf{Version3: true, Key: privateKey, LocalPort: localPortInt, RemotePorts: []int{remotePortInt}})
+	onion, err := t.Listen(listenCtx, &tor.ListenConf{Version3: true, LocalPort: localPortInt, RemotePorts: []int{remotePortInt}})
+	if err != nil {
+		return "", nil, err
+	}
 
-    return onion.ID, onion, err
+	return onion.ID, onion, err
 }
 
 func StopTor(t *tor.Tor) {
-    t.Close()
+	t.Close()
 }
 
+/*
 func saveServiceInfo(key string) error {
     file, err := os.Create("serviceinfo.json")
     if err != nil {
@@ -109,3 +111,4 @@ func getPrivateKey(t *tor.Tor) (ed25519.PrivateKey, error) {
         return keyPair.PrivateKey(), nil
     }
 }
+*/
