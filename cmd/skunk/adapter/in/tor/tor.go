@@ -7,22 +7,27 @@ import (
 	"time"
 
 	"github.com/cretz/bine/tor"
+    "github.com/ipsn/go-libtor"
 )
 
-func StartTor(socksPort string, dataDir string) (*tor.Tor, error) {
+func StartTor(socksPort string, dataDir string, useEmbedded bool) (*tor.Tor, error) {
 	if dataDir == "" {
 		dataDir = "tor-data"
 	}
+
 	torConfig := &tor.StartConf{
 		NoAutoSocksPort: true,
-		// Should work without setting the SocksPolicy
-		// Test from different devices!!
-		// ExtraArgs:       []string{"--SocksPort", socksPort, "--SocksPolicy", "accept 127.0.0.1"},
+		// Should work without setting the SocksPolicy ("--SocksPolicy", "accept 127.0.0.1" 
+        // To-Do: Test from different devices!!
 		ExtraArgs: []string{"--SocksPort", socksPort},
 		DataDir:   dataDir,
-		// EnableNetwork:   true,
-		DebugWriter: os.Stdout,
+        DebugWriter: os.Stdout, // Note: Just for testing, change later
 	}
+
+    // You're only able to run one go-libtor instance, so for testing you need to be able to disable it
+    if useEmbedded {
+        torConfig.ProcessCreator = libtor.Creator
+    }
 
 	t, err := tor.Start(nil, torConfig)
 	if err != nil {

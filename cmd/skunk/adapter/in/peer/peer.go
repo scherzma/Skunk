@@ -50,19 +50,19 @@ type Peer struct {
 // NewPeer initializes a new Peer instance with the given network settings.
 // It also configures the peer's HTTP client for optimal proxy support.
 func NewPeer(hostname string, localPort string, remotePort string, proxyAddr string) (*Peer, error) {
+    if remotePort == "" {
+        remotePort = localPort
+    }
 	transport, err := createTransport(proxyAddr) // Attempts to create an HTTP transport, optionally configured with a SOCKS5 proxy.
 	if err != nil {
 		return nil, fmt.Errorf("failed to create SOCKS5 dialer: %w", err)
 	}
 
-	fmt.Printf("Hostname: %s\n", hostname)
-	fmt.Printf("Port: %s\n", remotePort)
-
 	p := Peer{
 		readConns: make(map[string]*websocket.Conn),
 		Hostname:  hostname,
 		Port:      localPort,
-		Address:   fmt.Sprintf("ws://%s.onion:%s", hostname, remotePort),
+		Address:   fmt.Sprintf("ws://%s:%s", hostname, remotePort),
 		ProxyAddr: proxyAddr,
 		quitch:    make(chan struct{}),
 		client: &http.Client{
@@ -223,7 +223,6 @@ func (p *Peer) Connect(address string) error {
 	headers := http.Header{}
 	headers.Add("X-Peer-Address", p.Address)
 
-	fmt.Printf("Address: %s", address)
 	c, _, err := dialer.Dial(address, headers)
 
 	if err != nil {

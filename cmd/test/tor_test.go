@@ -7,7 +7,7 @@ import (
 )
 
 func TestTor(t *testing.T) {
-    torInstance, _ := tor.StartTor("9080", "")
+    torInstance, _ := tor.StartTor("9080", "", false)
     onionID, _, _ := tor.StartHiddenService(torInstance, "1111", "2222")
 
     t.Log(onionID)

@@ -1,10 +1,12 @@
 package test
 
 import (
+    "context"
+    "fmt"
 	"testing"
 	"time"
 
-	// "nhooyr.io/websocket"
+	"nhooyr.io/websocket"
 
 	"github.com/scherzma/Skunk/cmd/skunk/adapter/in/peer"
 	"github.com/scherzma/Skunk/cmd/skunk/adapter/in/tor"
@@ -15,9 +17,6 @@ const (
 	waitTime = 1 * time.Second
 )
 
-// In the future this should include tests with a proxy
-
-/*
 func TestNewPeer(t *testing.T) {
 	peerInstance, err := peer.NewPeer("127.0.0.1", "8080", "", "")
 	assert.NoError(t, err)
@@ -247,80 +246,46 @@ func TestPeerHeartbeat(t *testing.T) {
 	err := peer1.SetWriteConn(peer2.Address)
 	assert.Error(t, err)
 }
-*/
 
 func TestPeerTor(t *testing.T) {
-	torInstance, _ := tor.StartTor("9052", "data-dir1")
+	torInstance, _ := tor.StartTor("9052", "data-dir1", false)
 	onionID, onionOne, _ := tor.StartHiddenService(torInstance, "1110", "1111")
 
-	peerInstanceOne, _ := peer.NewPeer(onionID, "1110", "1111", "127.0.0.1:9052")
+	peerInstanceOne, _ := peer.NewPeer(onionID + ".onion", "1110", "1111", "127.0.0.1:9052")
 	defer peerInstanceOne.Shutdown()
 
 	peerInstanceOne.Listen(onionOne)
 	time.Sleep(1 * waitTime)
 
-	/*
-		dialCtx, dialCancel := context.WithTimeout(context.Background(), time.Minute)
-		defer dialCancel()
-		dialer, _ := torInstance.Dialer(dialCtx, nil)
+    messageCh := make(chan string)
+    errorCh := make(chan error)
 
-		dialerWS := websocket.Dialer{HandshakeTimeout: 1 * time.Minute}
-		dialerWS.NetDial = dialer.Dial
+    torInstanceTwo, _ := tor.StartTor("9053", "data-dir2", true)
+    onionIDTwo, _, _ := tor.StartHiddenService(torInstanceTwo, "2221", "2222")
 
-		address := fmt.Sprintf("ws://%s.onion:1111", onionID)
-		_, _, err = dialerWS.Dial(address, nil)
+    peerInstanceTwo, _ := peer.NewPeer(onionIDTwo + ".onion", "2221", "2222", "127.0.0.1:9053")
+    defer peerInstanceTwo.Shutdown()
+
+    err := peerInstanceTwo.Connect(peerInstanceOne.Address)
+    assert.NoError(t, err)
+
+    peerInstanceTwo.SetWriteConn(peerInstanceOne.Address)
+
+    go peerInstanceOne.ReadMessages(messageCh, errorCh)
+
+    peerInstanceTwo.WriteMessage("Hello Dark World!")
+
+
+	// wait until message has been sent and received
+	time.Sleep(10 * time.Second)
+
+	// check that no error occured during this time
+	select {
+	case err := <-errorCh:
 		assert.NoError(t, err)
-	*/
-
-	torInstanceTwo, _ := tor.StartTor("9053", "data-dir2")
-	onionIDTwo, _, _ := tor.StartHiddenService(torInstanceTwo, "2221", "2222")
-
-	peerInstanceTwo, _ := peer.NewPeer(onionIDTwo, "2221", "2222", "127.0.0.1:9053")
-	defer peerInstanceTwo.Shutdown()
-
-	err := peerInstanceTwo.Connect(peerInstanceOne.Address)
-	assert.NoError(t, err)
-
-	peerInstanceTwo.SetWriteConn(peerInstanceOne.Address)
-
-	messageCh := make(chan string)
-	errorCh := make(chan error)
-	go peerInstanceOne.ReadMessages(messageCh, errorCh)
-
-	peerInstanceTwo.WriteMessage("Hello Dark World!")
-
-	// select {
-	// case msg := <-messageCh:
-	// 	t.Log(msg)
-	// default:
-	// }
-
-	for msg := range messageCh {
-		t.Log(msg)
+	default:
 	}
 
-	tor.StopTor(torInstanceTwo)
 	tor.StopTor(torInstance)
+	tor.StopTor(torInstanceTwo)
 }
-
-// dialCtx, dialCancel := context.WithTimeout(context.Background(), time.Minute)
-// defer dialCancel()
-// dialerOne, _ := torInstance.Dialer(dialCtx, nil)
-// transportOne := &http.Transport{DialContext: dialerOne.DialContext}
-
-// peerInstanceOne, err := peer.NewPeer(onionID, hiddenServicePortOne, "", transportOne)
-
-// dialerTwo, _ := torInstance.Dialer(nil, nil)
-// transportTwo := &http.Transport{DialContext: dialerTwo.DialContext}
-
-// peerInstanceTwo, _ := peer.NewPeer(onionIDTwo, hiddenServicePortTwo, "", transportTwo)
-
-//     dialer, _ := proxy.SOCKS5("tcp", peerInstanceTwo.ProxyAddr, nil, nil)
-//
-// 	dialerWS := websocket.Dialer{HandshakeTimeout: 1 * time.Minute}
-// 	dialerWS.NetDial = dialer.Dial
-//
-// 	address := fmt.Sprintf("ws://%s.onion:1111", onionID)
-// 	_, _, err := dialerWS.Dial(address, nil)
-// 	assert.NoError(t, err)
-//
