@@ -1,8 +1,8 @@
 package test
 
 import (
-    "context"
-    "fmt"
+	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -247,45 +247,81 @@ func TestPeerHeartbeat(t *testing.T) {
 	assert.Error(t, err)
 }
 
+// this test represents two peers exchanging a message over the tor network
+// because go-libtor can only start one tor process, we have to use one local installation of tor too
 func TestPeerTor(t *testing.T) {
-	torInstance, _ := tor.StartTor("9052", "data-dir1", false)
-	onionID, onionOne, _ := tor.StartHiddenService(torInstance, "1110", "1111")
+	// starts the non-embedded version of tor
+	conf := &tor.TorConfig{
+		DataDir:              "data-dir1",
+		SocksPort:            "9052",
+		LocalPort:            "1110",
+		RemotePort:           "1111",
+		DeleteDataDirOnClose: true,
+		UseEmbedded:          false,
+	}
+	myTorOne, err := tor.NewTor(conf)
+	assert.NoError(t, err)
 
-	peerInstanceOne, _ := peer.NewPeer(onionID + ".onion", "1110", "1111", "127.0.0.1:9052")
+	err = myTorOne.StartTor()
+	assert.NoError(t, err)
+
+	onionOne, err := myTorOne.StartHiddenService()
+	assert.NoError(t, err)
+
+	peerInstanceOne, _ := peer.NewPeer(onionOne.ID+".onion", "1110", "1111", "127.0.0.1:9052")
 	defer peerInstanceOne.Shutdown()
 
 	peerInstanceOne.Listen(onionOne)
 	time.Sleep(1 * waitTime)
 
-    messageCh := make(chan string)
-    errorCh := make(chan error)
+	// starts the embedded version of tor
+	conf = &tor.TorConfig{
+		DataDir:              "data-dir2",
+		SocksPort:            "9053",
+		LocalPort:            "2221",
+		RemotePort:           "2222",
+		DeleteDataDirOnClose: true,
+		UseEmbedded:          true,
+	}
+	myTorTwo, err := tor.NewTor(conf)
+	assert.NoError(t, err)
 
-    torInstanceTwo, _ := tor.StartTor("9053", "data-dir2", true)
-    onionIDTwo, _, _ := tor.StartHiddenService(torInstanceTwo, "2221", "2222")
+	err = myTorTwo.StartTor()
+	assert.NoError(t, err)
 
-    peerInstanceTwo, _ := peer.NewPeer(onionIDTwo + ".onion", "2221", "2222", "127.0.0.1:9053")
-    defer peerInstanceTwo.Shutdown()
+	onionTwo, err := myTorTwo.StartHiddenService()
+	assert.NoError(t, err)
 
-    err := peerInstanceTwo.Connect(peerInstanceOne.Address)
-    assert.NoError(t, err)
+	// wait for the hidden service to be published completely
+	time.Sleep(10 * time.Second)
 
-    peerInstanceTwo.SetWriteConn(peerInstanceOne.Address)
+	peerInstanceTwo, _ := peer.NewPeer(onionTwo.ID+".onion", "2221", "2222", "127.0.0.1:9053")
+	defer peerInstanceTwo.Shutdown()
 
-    go peerInstanceOne.ReadMessages(messageCh, errorCh)
+	err = peerInstanceTwo.Connect(peerInstanceOne.Address)
+	assert.NoError(t, err)
 
-    peerInstanceTwo.WriteMessage("Hello Dark World!")
+	peerInstanceTwo.SetWriteConn(peerInstanceOne.Address)
 
+	messageCh := make(chan string)
+	errorCh := make(chan error)
+
+	go peerInstanceOne.ReadMessages(messageCh, errorCh)
+
+	peerInstanceTwo.WriteMessage("Hello Dark World!")
 
 	// wait until message has been sent and received
 	time.Sleep(10 * time.Second)
 
 	// check that no error occured during this time
 	select {
+	case msg := <-messageCh:
+		t.Log(msg)
 	case err := <-errorCh:
 		assert.NoError(t, err)
 	default:
 	}
 
-	tor.StopTor(torInstance)
-	tor.StopTor(torInstanceTwo)
+	myTorOne.StopTor()
+	myTorTwo.StopTor()
 }

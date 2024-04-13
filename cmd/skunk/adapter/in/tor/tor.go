@@ -2,118 +2,164 @@ package tor
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 
 	"github.com/cretz/bine/tor"
-    "github.com/ipsn/go-libtor"
+	"github.com/ipsn/go-libtor"
 )
 
-func StartTor(socksPort string, dataDir string, useEmbedded bool) (*tor.Tor, error) {
-	if dataDir == "" {
-		dataDir = "tor-data"
+// TorConfig holds configuration parameters for a Tor instance.
+type TorConfig struct {
+	DataDir              string // directory for storing tor data files.
+	SocksPort            string // SOCKS5 proxy port for tor connection.
+	LocalPort            string // local port for incoming connections.
+	RemotePort           string // remote port for hiddenservice.
+	DeleteDataDirOnClose bool   // flag to delete data directory on closing tor.
+	ReusePrivateKey      bool   // flag to reuse the private key across sessions.
+	UseEmbedded          bool   // use the embedded tor process (go-libtor)
+}
+
+// Tor wraps a tor configuration and instance for managing tor services.
+type Tor struct {
+	torConfig   *TorConfig // configuration for the tor instance.
+	torInstance *tor.Tor   // the tor instance.
+}
+
+// NewTor initializes a new tor instance with the provided configuration.
+func NewTor(torConfig *TorConfig) (*Tor, error) {
+	// basic validation of configuration paramters.
+	if torConfig.SocksPort == "" {
+		return nil, fmt.Errorf("no tor socks port provided")
+	}
+	if torConfig.SocksPort == "9050" {
+		return nil, fmt.Errorf("can't use 9050 as tor socks port")
+	}
+	if torConfig.LocalPort == "" {
+		return nil, fmt.Errorf("no local port given")
+	}
+	if torConfig.RemotePort == "" {
+		return nil, fmt.Errorf("no remote port given")
+	}
+	if torConfig.LocalPort == torConfig.SocksPort || torConfig.RemotePort == torConfig.SocksPort {
+		return nil, fmt.Errorf("ports for hiddenservice can't match tor socks port")
 	}
 
-	torConfig := &tor.StartConf{
-		NoAutoSocksPort: true,
-		// Should work without setting the SocksPolicy ("--SocksPolicy", "accept 127.0.0.1" 
-        // To-Do: Test from different devices!!
-		ExtraArgs: []string{"--SocksPort", socksPort},
-		DataDir:   dataDir,
-        DebugWriter: os.Stdout, // Note: Just for testing, change later
+	if torConfig.DataDir == "" {
+		torConfig.DataDir = "tor-data"
 	}
 
-    // You're only able to run one go-libtor instance, so for testing you need to be able to disable it
-    if useEmbedded {
-        torConfig.ProcessCreator = libtor.Creator
-    }
+	return &Tor{
+		torConfig:   torConfig,
+		torInstance: nil,
+	}, nil
+}
 
-	t, err := tor.Start(nil, torConfig)
+// StarTor starts the tor instance with the configured settings.
+func (t *Tor) StartTor() error {
+	if t.torInstance != nil {
+		return fmt.Errorf("can't start the same tor instance twice")
+	}
+
+	conf := &tor.StartConf{
+		NoAutoSocksPort: true, // needs to be true to be able to set a custom socks port
+		ExtraArgs:       []string{"--SocksPort", t.torConfig.SocksPort},
+		DataDir:         t.torConfig.DataDir,
+		DebugWriter:     os.Stdout, // just for testing. might change later
+	}
+	// if configured use the go-libtor embedded tor process creator
+	if t.torConfig.UseEmbedded {
+		conf.ProcessCreator = libtor.Creator
+	}
+
+	torInstance, err := tor.Start(nil, conf)
+	if err != nil {
+		return err
+	}
+
+	t.torInstance = torInstance
+	return nil
+}
+
+// StartHiddenService starts a hidden service using the current tor instance.
+func (t *Tor) StartHiddenService() (*tor.OnionService, error) {
+	if t.torInstance == nil {
+		return nil, fmt.Errorf("tor needs to be started before a hiddenservice can be created")
+	}
+
+	// LocalPort and RemotePort are strings because we want to provide a unified interface for the tor config
+	// where you don't need to figure out which port / address has which type.
+	remotePortInt, err := strconv.Atoi(t.torConfig.RemotePort)
+	if err != nil {
+		return nil, err
+	}
+	localPortInt, err := strconv.Atoi(t.torConfig.LocalPort)
 	if err != nil {
 		return nil, err
 	}
 
-	return t, nil
-}
-
-func StartHiddenService(t *tor.Tor, localPort string, remotePort string) (string, *tor.OnionService, error) {
-	// privateKey, err := getPrivateKey(t)
-	// if err != nil {
-	//     return "", nil, err
-	// }
-
-	remotePortInt, err := strconv.Atoi(remotePort)
-	if err != nil {
-		return "", nil, err
+	conf := &tor.ListenConf{
+		Version3:    true, // uses v3 onion service and ed25519 key
+		LocalPort:   localPortInt,
+		RemotePorts: []int{remotePortInt},
 	}
-	localPortInt, err := strconv.Atoi(localPort)
 
+	// attempt to read the private key if ReusePrivateKey is true
+	if t.torConfig.ReusePrivateKey {
+		privateKeyPath := filepath.Join(t.torConfig.DataDir, "hidden_service_private_key")
+		var privateKey ed25519.PrivateKey
+
+		if _, err := os.Stat(privateKeyPath); err == nil {
+			keyData, readErr := os.ReadFile(privateKeyPath)
+			if readErr != nil {
+				return nil, fmt.Errorf("failed to read private key: %v", readErr)
+			}
+			privateKey = ed25519.PrivateKey(keyData)
+		} else {
+			// generate a new private key
+			_, privKey, genErr := ed25519.GenerateKey(rand.Reader)
+			if genErr != nil {
+				return nil, fmt.Errorf("failed to generate private key: %v", genErr)
+			}
+			privateKey = privKey
+			// save newly generated private key
+			if err := os.WriteFile(privateKeyPath, privKey.Seed(), 0600); err != nil {
+				return nil, fmt.Errorf("failed to save private key: %v", err)
+			}
+		}
+		conf.Key = privateKey
+	}
+
+	// wait at most a few minutes to publish the service
 	listenCtx, listenCancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer listenCancel()
 
-	// onion, err := t.Listen(listenCtx, &tor.ListenConf{Version3: true, Key: privateKey, LocalPort: localPortInt, RemotePorts: []int{remotePortInt}})
-	onion, err := t.Listen(listenCtx, &tor.ListenConf{Version3: true, LocalPort: localPortInt, RemotePorts: []int{remotePortInt}})
+	onion, err := t.torInstance.Listen(listenCtx, conf)
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
 
-	return onion.ID, onion, err
+	return onion, nil
 }
 
-func StopTor(t *tor.Tor) {
-	t.Close()
+// StopTor stops the tor instance (and hiddenservice) and handles cleanup.
+func (t *Tor) StopTor() error {
+	err := t.torInstance.Close()
+	if err != nil {
+		return fmt.Errorf("error stopping tor: %v", err)
+	}
+	t.torInstance = nil
+
+	// clean up data directory if needed.
+	if t.torConfig.DataDir != "" && t.torConfig.DeleteDataDirOnClose {
+		if err := os.RemoveAll(t.torConfig.DataDir); err != nil {
+			return fmt.Errorf("failed to remove data dir %v: %v", t.torConfig.DataDir, err)
+		}
+	}
+	return nil
 }
-
-/*
-func saveServiceInfo(key string) error {
-    file, err := os.Create("serviceinfo.json")
-    if err != nil {
-        return err
-    }
-    defer file.Close()
-
-    encoder := json.NewEncoder(file)
-    return encoder.Encode(key)
-}
-
-func loadServiceInfo() (string, error) {
-    file, err := os.Open("serviceinfo.json")
-    if err != nil {
-        return "", err
-    }
-    defer file.Close()
-    decoder := json.NewDecoder(file)
-    var key string
-    if err := decoder.Decode(&key); err != nil {
-        return "", err
-    }
-    return key, nil
-}
-
-func getPrivateKey(t *tor.Tor) (ed25519.PrivateKey, error) {
-    path := fmt.Sprintf("%s/serviceinfo.json", t.DataDir)
-
-    if _, err := os.Stat(path); err == nil {
-        privateKeyString, err := loadServiceInfo()
-        if err != nil {
-            return nil, err
-        }
-
-        privateKeyBytes, _ := hex.DecodeString(privateKeyString)
-        privateKey := ed25519.PrivateKey(privateKeyBytes)
-
-        return privateKey, nil
-    } else {
-        keyPair, _ := ed25519.GenerateKey(nil)
-        privateKey := hex.EncodeToString(keyPair.PrivateKey())
-
-        err = saveServiceInfo(privateKey)
-        if err != nil {
-            return nil, err
-        }
-
-        return keyPair.PrivateKey(), nil
-    }
-}
-*/

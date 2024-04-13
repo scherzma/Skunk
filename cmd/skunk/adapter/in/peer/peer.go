@@ -16,11 +16,11 @@ import (
 const (
 	MaxConns          = 64                           // MaxConns defines the maximum number of concurrent websocket connections allowed.
 	connWait          = 1 * time.Minute              // connWait specifies the timeout for connecting to another peer.
-	writeWait         = 2 * time.Second              // writeWait specifies the timeout for writing to another peer.
+	writeWait         = 20 * time.Second             // writeWait specifies the timeout for writing to another peer. has to be high when running over tor
 	shutdownWait      = 0 * time.Second              // shutdownWait specifies the wait time for shutting down the HTTP server. (optional for later)
 	readRateInterval  = 2 * time.Second              // readRateInterval specifies the rate at which it will it is tried to read a message from every connection.
 	readWait          = (readRateInterval * 9) / 10  // readWait specifies the time for trying to read a message from a connection. Needs to be less than readRateInterval
-	heartbeatInterval = 30 * time.Second             // heartbeatInterval specifies the time interval between consecutive heartbeat messages.
+	heartbeatInterval = 1 * time.Minute              // heartbeatInterval specifies the time interval between consecutive heartbeat messages. when running over tor this should be high
 	pongWait          = (heartbeatInterval * 9) / 10 // pongWait specifies the time a ping response can need before the connection gets classified as closed during an heartbeat. Needs to be less than heartbeatInteval
 	maxMessageSize    = 512                          // maxMessageSize defines the maximum message size allowed from peer. (bytes)
 )
@@ -37,22 +37,22 @@ type Peer struct {
 	readConns  map[string]*websocket.Conn // readConns maintains a map of active websocket connections for reading, indexed by the remote address. Note: Maybe we can later use a sync.Map
 	mapRWLock  sync.RWMutex               // mapRWLock provides concurrent access control for readConns map.
 	writeConn  *websocket.Conn            // writeConn is a dedicated websocket connection reserved for writing messages.
+	readMutex  sync.Mutex                 // readMutex provides concurrent access control for ReadMessage.
+	writeMutex sync.Mutex                 // writeMutex provides concurrent access control for WriteMessage.
+	quitch     chan struct{}              // quitch is used to signal the shutdown process for the peer.
 	Hostname   string                     // Hostname specifies the network address of the peer.
 	Port       string                     // Port on which the peer listens for incoming connections.
-	LocalPort  string
-	Address    string        // Address specifies the complete websocket address: ws://Hostname:Port
-	ProxyAddr  string        // ProxyAddr specifies the address of SOCKS5 proxy, if used for connections.
-	readMutex  sync.Mutex    // readMutex provides concurrent access control for readConns.
-	writeMutex sync.Mutex    // writeMutex provides concurrent access control for writeConn.
-	quitch     chan struct{} // quitch is used to signal the shutdown process for the peer.
+	Address    string                     // Address specifies the complete websocket address: ws://Hostname:Port
+	ProxyAddr  string                     // ProxyAddr specifies the address of SOCKS5 proxy, if used for connections.
 }
 
 // NewPeer initializes a new Peer instance with the given network settings.
 // It also configures the peer's HTTP client for optimal proxy support.
+// hostname needs to include .de, .onion...
 func NewPeer(hostname string, localPort string, remotePort string, proxyAddr string) (*Peer, error) {
-    if remotePort == "" {
-        remotePort = localPort
-    }
+	if remotePort == "" {
+		remotePort = localPort
+	}
 	transport, err := createTransport(proxyAddr) // Attempts to create an HTTP transport, optionally configured with a SOCKS5 proxy.
 	if err != nil {
 		return nil, fmt.Errorf("failed to create SOCKS5 dialer: %w", err)
@@ -91,47 +91,9 @@ func createTransport(proxyAddr string) (*http.Transport, error) {
 	return &http.Transport{}, nil
 }
 
-/*
 // Listen sets up an HTTP server and starts listening on the configured port for incoming websocket connections.
 // It also starts a goroutine for graceful shutdown handling upon receiving a signal on the quitch channel.
-func (p *Peer) Listen() {
-	select {
-	case _, ok := <-p.quitch:
-		if !ok {
-			p.quitch = make(chan struct{}) // if closed, then reopen channel
-		}
-	default:
-	}
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", p.handler) // Registers the main handler for incoming websocket upgrade requests.
-
-	srv := &http.Server{
-		// Addr:    fmt.Sprintf(":%s", p.LocalPort),
-		Addr:    "127.0.0.1:" + p.Port,
-		Handler: mux,
-	}
-
-	go func() {
-		if err := srv.ListenAndServe(); err != http.ErrServerClosed {
-			log.Printf("HTTP server listen failed: %v", err)
-		}
-	}()
-
-	// Shuts down server when quitch gets closed
-	go func() {
-		select {
-		case <-p.quitch:
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownWait)
-			defer cancel()
-
-			if err := srv.Shutdown(shutdownCtx); err != nil {
-				log.Printf("HTTP server shutdown failed: %v", err)
-			}
-		}
-	}()
-}
-*/
-
+// Optionally it uses the listener provided by tor.
 func (p *Peer) Listen(l net.Listener) {
 	select {
 	case _, ok := <-p.quitch:
@@ -238,12 +200,12 @@ func (p *Peer) readMessage(conn *websocket.Conn, address string) (string, error)
 	if conn == nil {
 		return "", fmt.Errorf("invalid connection: connection is nil")
 	}
-	p.readMutex.Lock()
-	defer p.readMutex.Unlock()
 
 	conn.SetReadLimit(maxMessageSize)
 	conn.SetReadDeadline(time.Now().Add(readWait))
+	p.readMutex.Lock()
 	_, messageBytes, err := conn.ReadMessage()
+	p.readMutex.Unlock()
 	if err != nil {
 		if p.checkConnIsClosed(address, err) {
 			return "", err
@@ -262,6 +224,7 @@ func (p *Peer) ReadMessages(messageCh chan<- string, errorCh chan<- error) {
 		for {
 			select {
 			case <-ticker.C:
+				p.mapRWLock.RLock()
 				for addr, conn := range p.readConns {
 					go func() {
 						msg, err := p.readMessage(conn, addr)
@@ -274,6 +237,7 @@ func (p *Peer) ReadMessages(messageCh chan<- string, errorCh chan<- error) {
 						}
 					}()
 				}
+				p.mapRWLock.RUnlock()
 			case <-p.quitch:
 				ticker.Stop()
 				return
@@ -288,14 +252,14 @@ func (p *Peer) WriteMessage(message string) error {
 	if p.writeConn == nil {
 		return fmt.Errorf("no write connection is set")
 	}
-	p.writeMutex.Lock()
-	defer p.writeMutex.Unlock()
 
 	// Append From p.Address: to message so that the other peers knows which peer sent him the message.
 	fullMessage := fmt.Sprintf("From %s: %s", p.Address, message)
 
 	p.writeConn.SetWriteDeadline(time.Now().Add(writeWait))
+	p.writeMutex.Lock()
 	err := p.writeConn.WriteMessage(websocket.TextMessage, []byte(fullMessage))
+	p.writeMutex.Unlock()
 	if err != nil {
 		p.checkConnIsClosed(p.writeConn.RemoteAddr().String(), err)
 		return err
@@ -367,9 +331,10 @@ func (p *Peer) startHeartbeat() {
 // sendHearbeatToAll sends a hearbeat signal (ping) to each active connection.
 // If a connection fails to respond to the heartbeat, it removes the connection.
 func (p *Peer) sendHeartbeatToAll() {
-	p.writeMutex.Lock()
-	defer p.writeMutex.Unlock()
+	//p.writeMutex.Lock()
+	//defer p.writeMutex.Unlock()
 
+	// THIS IS NOT GOOD
 	for address, conn := range p.readConns {
 		if conn == nil {
 			p.mapRWLock.Lock()
