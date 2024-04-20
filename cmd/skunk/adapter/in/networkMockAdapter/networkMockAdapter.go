@@ -2,7 +2,6 @@ package networkMockAdapter
 
 import (
 	"fmt"
-	"github.com/scherzma/Skunk/cmd/skunk/application/domain/chat/c_model"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
 	"sync"
 )
@@ -44,14 +43,14 @@ func (m *MockConnection) UnsubscribeFromNetwork(observer network.NetworkObserver
 }
 
 // SendMessageToNetworkPeer is a mock function for the network
-func (m *MockConnection) SendMessageToNetworkPeer(address string, message c_model.Message) error {
+func (m *MockConnection) SendMessageToNetworkPeer(address string, message network.Message) error {
 	fmt.Println("Sending message to: " + address)
 	fmt.Println(message.Content)
 	return nil
 }
 
 // SendMockNetworkMessageToSubscribers is a mock function for the network
-func (m *MockConnection) SendMockNetworkMessageToSubscribers(message c_model.Message) error {
+func (m *MockConnection) SendMockNetworkMessageToSubscribers(message network.Message) error {
 	for _, sub := range m.subscribers {
 		sub.Notify(message)
 	}

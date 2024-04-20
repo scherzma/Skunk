@@ -2,13 +2,13 @@ package messageHandlers
 
 import (
 	"fmt"
-	"github.com/scherzma/Skunk/cmd/skunk/application/domain/chat/c_model"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
 )
 
 type TestMessageHandler struct {
 }
 
-func (t *TestMessageHandler) HandleMessage(message c_model.Message) error {
+func (t *TestMessageHandler) HandleMessage(message network.Message) error {
 	fmt.Println("TestMessageHandler: ", message.Content)
 	return nil
 }

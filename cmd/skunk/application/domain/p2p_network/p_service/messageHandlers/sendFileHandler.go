@@ -1,10 +1,12 @@
 package messageHandlers
 
-import "github.com/scherzma/Skunk/cmd/skunk/application/domain/chat/c_model"
+import (
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+)
 
 type SendFileHandler struct{}
 
-func (s *SendFileHandler) HandleMessage(message c_model.Message) error {
+func (s *SendFileHandler) HandleMessage(message network.Message) error {
 	//TODO implement
 	return nil
 }

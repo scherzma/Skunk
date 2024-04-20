@@ -2,8 +2,8 @@ package test
 
 import (
 	"github.com/scherzma/Skunk/cmd/skunk/adapter/in/networkMockAdapter"
-	"github.com/scherzma/Skunk/cmd/skunk/application/domain/chat/c_model"
 	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_model"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
 	"testing"
 )
 
@@ -19,11 +19,11 @@ func TestGetPeerInstance(t *testing.T) {
 func TestNotify(t *testing.T) {
 	peer := p_model.GetPeerInstance()
 
-	testMessage := c_model.Message{
+	testMessage := network.Message{
 		Id:        "8888",
 		Timestamp: 1633029445,
 		Content:   "Hello World!",
-		Operation: c_model.TEST_MESSAGE,
+		Operation: network.TEST_MESSAGE,
 	}
 
 	err := peer.Notify(testMessage)

@@ -3,6 +3,7 @@ module github.com/scherzma/Skunk
 go 1.20
 
 require (
+	github.com/google/uuid v1.6.0
 	github.com/mattn/go-sqlite3 v1.14.22
 	github.com/stretchr/testify v1.9.0
 )

@@ -2,12 +2,15 @@ package messageHandlers
 
 import (
 	"fmt"
-	"github.com/scherzma/Skunk/cmd/skunk/application/domain/chat/c_model"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
 )
 
 type SendMessageHandler struct{}
 
-func (s *SendMessageHandler) HandleMessage(message c_model.Message) error {
+func (s *SendMessageHandler) HandleMessage(message network.Message) error {
 	fmt.Println("HandleMessage: ", message.Content)
+
+	// peer := network.GetPeer(message.Sender)
+
 	return nil
 }

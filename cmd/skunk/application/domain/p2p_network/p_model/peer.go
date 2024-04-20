@@ -2,8 +2,7 @@ package p_model
 
 import (
 	"errors"
-	"github.com/scherzma/Skunk/cmd/skunk/adapter/in/networkMockAdapter"
-	"github.com/scherzma/Skunk/cmd/skunk/application/domain/chat/c_model"
+	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_service"
 	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_service/messageHandlers"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
 	"sync"
@@ -15,42 +14,68 @@ var (
 )
 
 type Peer struct {
-	Chats      NetworkChats
-	handlers   map[c_model.OperationType]messageHandlers.MessageHandler
-	connection network.NetworkConnection
+	Chats       networkChats
+	handlers    map[network.OperationType]messageHandlers.MessageHandler
+	connections []network.NetworkConnection
 }
 
 func GetPeerInstance() *Peer {
 	once.Do(func() {
-		handlers := map[c_model.OperationType]messageHandlers.MessageHandler{
-			c_model.JOIN_CHAT:      &messageHandlers.JoinChatHandler{},
-			c_model.SEND_FILE:      &messageHandlers.SendFileHandler{},
-			c_model.SYNC_REQUEST:   &messageHandlers.SyncRequestHandler{},
-			c_model.SYNC_RESPONSE:  &messageHandlers.SyncResponseHandler{},
-			c_model.SET_USERNAME:   &messageHandlers.SetUsernameHandler{},
-			c_model.SEND_MESSAGE:   &messageHandlers.SendMessageHandler{},
-			c_model.CREATE_CHAT:    &messageHandlers.CreateChatHandler{},
-			c_model.INVITE_TO_CHAT: &messageHandlers.InviteToChatHandler{},
-			c_model.LEAVE_CHAT:     &messageHandlers.LeaveChatHandler{},
-			c_model.TEST_MESSAGE:   &messageHandlers.TestMessageHandler{},
-			c_model.TEST_MESSAGE_2: &messageHandlers.TestMessageHandler2{},
+		handlers := map[network.OperationType]messageHandlers.MessageHandler{
+			network.JOIN_CHAT:      &messageHandlers.JoinChatHandler{},
+			network.SEND_FILE:      &messageHandlers.SendFileHandler{},
+			network.SYNC_REQUEST:   &messageHandlers.SyncRequestHandler{},
+			network.SYNC_RESPONSE:  &messageHandlers.SyncResponseHandler{},
+			network.SET_USERNAME:   &messageHandlers.SetUsernameHandler{},
+			network.SEND_MESSAGE:   &messageHandlers.SendMessageHandler{},
+			network.CREATE_CHAT:    &messageHandlers.CreateChatHandler{},
+			network.INVITE_TO_CHAT: &messageHandlers.InviteToChatHandler{},
+			network.LEAVE_CHAT:     &messageHandlers.LeaveChatHandler{},
+			network.TEST_MESSAGE:   &messageHandlers.TestMessageHandler{},
+			network.TEST_MESSAGE_2: &messageHandlers.TestMessageHandler2{},
 		}
 
 		peerInstance = &Peer{
-			Chats:      NetworkChats{},
-			handlers:   handlers,
-			connection: networkMockAdapter.GetMockConnection(),
+			Chats:       networkChats{},
+			handlers:    handlers,
+			connections: []network.NetworkConnection{},
 		}
-
-		peerInstance.connection.SubscribeToNetwork(peerInstance)
 	})
 
 	return peerInstance
 }
 
-func (p *Peer) Notify(message c_model.Message) error {
+func (p *Peer) AddNetworkConnection(connection network.NetworkConnection) {
+	p.connections = append(p.connections, connection)
+	connection.SubscribeToNetwork(p)
+}
+
+func (p *Peer) RemoveNetworkConnection(connection network.NetworkConnection) {
+	for i, c := range p.connections {
+		if c == connection {
+			p.connections = append(p.connections[:i], p.connections[i+1:]...)
+			break
+		}
+	}
+}
+
+func (p *Peer) Notify(message network.Message) error {
 	if handler, exists := p.handlers[message.Operation]; exists {
 		return handler.HandleMessage(message) // some form of authentication should be done here
 	}
 	return errors.New("invalid message operation")
+}
+
+func (p *Peer) SendMessageToNetworkPeer(address string, message network.Message) error {
+
+	if !p_service.ValidateMessage(message) {
+		return errors.New("invalid message")
+	}
+
+	for _, connection := range p.connections {
+		if err := connection.SendMessageToNetworkPeer(address, message); err != nil {
+			return err
+		}
+	}
+	return nil
 }
