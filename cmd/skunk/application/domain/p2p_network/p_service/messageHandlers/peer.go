@@ -1,9 +1,9 @@
-package p_model
+package messageHandlers
 
 import (
 	"errors"
+	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_model"
 	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_service"
-	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_service/messageHandlers"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
 	"sync"
 )
@@ -14,29 +14,29 @@ var (
 )
 
 type Peer struct {
-	Chats       networkChats
-	handlers    map[network.OperationType]messageHandlers.MessageHandler
+	Chats       p_model.NetworkChats
+	handlers    map[network.OperationType]MessageHandler
 	connections []network.NetworkConnection
 }
 
 func GetPeerInstance() *Peer {
 	once.Do(func() {
-		handlers := map[network.OperationType]messageHandlers.MessageHandler{
-			network.JOIN_CHAT:      &messageHandlers.JoinChatHandler{},
-			network.SEND_FILE:      &messageHandlers.SendFileHandler{},
-			network.SYNC_REQUEST:   &messageHandlers.SyncRequestHandler{},
-			network.SYNC_RESPONSE:  &messageHandlers.SyncResponseHandler{},
-			network.SET_USERNAME:   &messageHandlers.SetUsernameHandler{},
-			network.SEND_MESSAGE:   &messageHandlers.SendMessageHandler{},
-			network.CREATE_CHAT:    &messageHandlers.CreateChatHandler{},
-			network.INVITE_TO_CHAT: &messageHandlers.InviteToChatHandler{},
-			network.LEAVE_CHAT:     &messageHandlers.LeaveChatHandler{},
-			network.TEST_MESSAGE:   &messageHandlers.TestMessageHandler{},
-			network.TEST_MESSAGE_2: &messageHandlers.TestMessageHandler2{},
+		handlers := map[network.OperationType]MessageHandler{
+			network.JOIN_CHAT:      &JoinChatHandler{},
+			network.SEND_FILE:      &SendFileHandler{},
+			network.SYNC_REQUEST:   &SyncRequestHandler{},
+			network.SYNC_RESPONSE:  &SyncResponseHandler{},
+			network.SET_USERNAME:   &SetUsernameHandler{},
+			network.SEND_MESSAGE:   &SendMessageHandler{},
+			network.CREATE_CHAT:    &CreateChatHandler{},
+			network.INVITE_TO_CHAT: &InviteToChatHandler{},
+			network.LEAVE_CHAT:     &LeaveChatHandler{},
+			network.TEST_MESSAGE:   &TestMessageHandler{},
+			network.TEST_MESSAGE_2: &TestMessageHandler2{},
 		}
 
 		peerInstance = &Peer{
-			Chats:       networkChats{},
+			Chats:       p_model.NetworkChats{},
 			handlers:    handlers,
 			connections: []network.NetworkConnection{},
 		}

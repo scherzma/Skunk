@@ -19,6 +19,7 @@ func (ncm *NetworkChatMessages) AddMessage(message network.Message) error {
 	if _, exists := ncm.chatMessagesMap[message.Id]; exists {
 		return errors.New("message already exists")
 	}
+
 	ncm.chatMessagesMap[message.Id] = message
 	return nil
 }
@@ -58,4 +59,20 @@ func (ncm *NetworkChatMessages) GetMissingInternalMessages(inputMessageIDs []str
 		}
 	}
 	return missingMessages
+}
+
+func (ncm *NetworkChatMessages) GetMissingInternalMessageIDs(inputMessageIDs []string) []string {
+	missingMessageIDs := make([]string, 0)
+	ncmMap := ncm.chatMessagesMap
+
+	for _, id := range inputMessageIDs {
+		if _, exists := ncmMap[id]; !exists {
+			missingMessageIDs = append(missingMessageIDs, id)
+		}
+	}
+	return missingMessageIDs
+}
+
+func (ncm *NetworkChatMessages) GetUsername() string {
+	return "todo: implement me (Username)" // TODO implement me
 }

@@ -45,7 +45,7 @@ func (m *MockConnection) UnsubscribeFromNetwork(observer network.NetworkObserver
 // SendMessageToNetworkPeer is a mock function for the network
 func (m *MockConnection) SendMessageToNetworkPeer(address string, message network.Message) error {
 	fmt.Println("Sending message to: " + address)
-	fmt.Println(message.Content)
+	fmt.Println("Message: ", message)
 	return nil
 }
 

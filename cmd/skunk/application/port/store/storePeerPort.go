@@ -1,9 +1,11 @@
 package store
 
-import "github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_model"
+import (
+	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_service/messageHandlers"
+)
 
 type StorePeer interface {
-	StorePeer(peer p_model.Peer)
-	RetrivePeers() ([]p_model.Peer, error)
-	RetrivePeer(peerId string) (p_model.Peer, error)
+	StorePeer(peer messageHandlers.Peer)
+	RetrivePeers() ([]messageHandlers.Peer, error)
+	RetrivePeer(peerId string) (messageHandlers.Peer, error)
 }
