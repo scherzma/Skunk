@@ -1,13 +1,13 @@
 module github.com/scherzma/Skunk
 
-go 1.20
+go 1.22rc2
 
 require (
 	github.com/google/uuid v1.6.0
 	github.com/mattn/go-sqlite3 v1.14.22
 	github.com/stretchr/testify v1.9.0
 	golang.org/x/net v0.21.0
-    nhooyr.io/websocket v1.8.10
+	nhooyr.io/websocket v1.8.10
 )
 
 require (
