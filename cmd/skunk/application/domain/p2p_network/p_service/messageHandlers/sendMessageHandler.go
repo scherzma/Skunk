@@ -12,5 +12,7 @@ func (s *SendMessageHandler) HandleMessage(message network.Message) error {
 
 	// peer := network.GetPeer(message.Sender)
 
+	// TODO define interface for ChatLogic with Pub/Sub
+
 	return nil
 }

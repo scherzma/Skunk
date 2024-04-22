@@ -118,4 +118,15 @@ func main() {
 
 	mockNetworkConnection.SendMockNetworkMessageToSubscribers(testSyncMessage)
 
+	//{"Id":"internalMessage123!","Timestamp":1633029448,"Content":"LOOOOOOOOOOOOOOOOOOOOOOOL","FromUser":"as23d","ChatID":"asdf","Operation":1},{"Id":"internalMessage2","Timestamp":1633029448,"Content":"WOOW","FromUser":"as23d","ChatID":"asdf","Operation":1}
+	mockSyncResponse := network.Message{
+		Id:        "mockSyncResponse",
+		Timestamp: 1633029449,
+		Content:   "[{\"Id\":\"internalMessage123!\",\"Timestamp\":1633029448,\"Content\":\"LOOOOOOOOOOOOOOOOOOOOOOOL\",\"FromUser\":\"as23d\",\"ChatID\":\"asdf\",\"Operation\":1},{\"Id\":\"internalMessage2\",\"Timestamp\":1633029448,\"Content\":\"WOOW\",\"FromUser\":\"as23d\",\"ChatID\":\"asdf\",\"Operation\":1}]",
+		FromUser:  "as23d",
+		ChatID:    "asdf",
+		Operation: network.SYNC_RESPONSE,
+	}
+	mockNetworkConnection.SendMockNetworkMessageToSubscribers(mockSyncResponse)
+
 }

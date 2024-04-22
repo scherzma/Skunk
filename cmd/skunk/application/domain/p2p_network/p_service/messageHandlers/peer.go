@@ -14,9 +14,10 @@ var (
 )
 
 type Peer struct {
-	Chats       p_model.NetworkChats
-	handlers    map[network.OperationType]MessageHandler
-	connections []network.NetworkConnection
+	Chats           p_model.NetworkChats
+	handlers        map[network.OperationType]MessageHandler
+	connections     []network.NetworkConnection
+	securityContext p_service.SecurityContext
 }
 
 func GetPeerInstance() *Peer {
@@ -36,9 +37,10 @@ func GetPeerInstance() *Peer {
 		}
 
 		peerInstance = &Peer{
-			Chats:       p_model.NetworkChats{},
-			handlers:    handlers,
-			connections: []network.NetworkConnection{},
+			Chats:           p_model.NetworkChats{},
+			handlers:        handlers,
+			connections:     []network.NetworkConnection{},
+			securityContext: p_service.SecurityContext{},
 		}
 	})
 
@@ -61,14 +63,18 @@ func (p *Peer) RemoveNetworkConnection(connection network.NetworkConnection) {
 
 func (p *Peer) Notify(message network.Message) error {
 	if handler, exists := p.handlers[message.Operation]; exists {
-		return handler.HandleMessage(message) // some form of authentication should be done here
+		if !p.securityContext.ValidateIncomingMessage(message) {
+			return errors.New("invalid message")
+		}
+
+		return handler.HandleMessage(message)
 	}
 	return errors.New("invalid message operation")
 }
 
 func (p *Peer) SendMessageToNetworkPeer(address string, message network.Message) error {
 
-	if !p_service.ValidateMessage(message) {
+	if !p.securityContext.ValidateOutgoingMessage(message) {
 		return errors.New("invalid message")
 	}
 

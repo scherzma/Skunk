@@ -2,6 +2,7 @@ package messageHandlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_model"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
 )
@@ -10,8 +11,10 @@ type SyncResponseHandler struct {
 }
 
 func (s *SyncResponseHandler) HandleMessage(message network.Message) error {
-	/*
 
+	fmt.Println("SyncResponseHandler")
+	fmt.Println("Message: ", message)
+	/*
 		syncResponse := network.Message{
 			Id:        uuid.New().String(),
 			Timestamp: time.Now().UnixNano(),
@@ -46,10 +49,12 @@ func (s *SyncResponseHandler) HandleMessage(message network.Message) error {
 	var receivedMessages []network.Message
 	err := json.Unmarshal([]byte(message.Content), &receivedMessages)
 	if err != nil {
+		fmt.Println("Error unmarshalling message content")
 		return err
 	}
 
 	for _, message := range receivedMessages {
+		fmt.Println("Added message to chat: ", message)
 		chatMessageRepo.AddMessage(message)
 	}
 
