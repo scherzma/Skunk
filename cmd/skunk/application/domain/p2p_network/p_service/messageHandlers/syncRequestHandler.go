@@ -14,8 +14,6 @@ type SyncRequestHandler struct {
 
 func (s *SyncRequestHandler) HandleMessage(message network.Message) error {
 
-	fmt.Println("SyncRequestHandler")
-
 	chatRepo := p_model.GetNetworkChatsInstance()
 	chatMessageRepo := chatRepo.GetChat(message.ChatID)
 
@@ -66,8 +64,6 @@ func (s *SyncRequestHandler) HandleMessage(message network.Message) error {
 		ChatID:    message.ChatID,
 		Operation: network.SYNC_RESPONSE,
 	}
-	fmt.Println("syncResponse: ", syncResponse)
-	fmt.Println("syncResponse.Content: ", syncResponse.Content)
 
 	// Send sync request to other peer to get the difference between the messages that the other peer knows this peer does not know
 	syncRequest := network.Message{
@@ -78,8 +74,6 @@ func (s *SyncRequestHandler) HandleMessage(message network.Message) error {
 		ChatID:    message.ChatID,
 		Operation: network.SYNC_REQUEST,
 	}
-	fmt.Println("syncRequest.Content: ", syncRequest.Content)
-	fmt.Println("syncRequest: ", syncRequest)
 
 	peer := GetPeerInstance()
 	peer.SendMessageToNetworkPeer("addressResponse", syncResponse)

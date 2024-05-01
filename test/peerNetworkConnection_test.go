@@ -4,6 +4,7 @@ import (
 	"github.com/scherzma/Skunk/cmd/skunk/adapter/in/networkMockAdapter"
 	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_service/messageHandlers"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+	"github.com/stretchr/testify/assert"
 	"testing"
 )
 
@@ -28,9 +29,8 @@ func TestNotify(t *testing.T) {
 
 	err := peer.Notify(testMessage)
 
-	if err != nil {
-		t.Errorf("Notify() failed, expected nil, got error: %v", err)
-	}
+	assert.NoError(t, err, "Notify() failed, expected nil, got error")
+
 }
 
 func TestSubscribeAndUnsubscribeToNetwork(t *testing.T) {
@@ -38,12 +38,8 @@ func TestSubscribeAndUnsubscribeToNetwork(t *testing.T) {
 	peer := messageHandlers.GetPeerInstance()
 
 	err := mockConnection.SubscribeToNetwork(peer)
-	if err != nil {
-		t.Errorf("SubscribeToNetwork() failed, expected nil, got error: %v", err)
-	}
+	assert.NoError(t, err, "SubscribeToNetwork() failed, expected nil, got error")
 
 	err = mockConnection.UnsubscribeFromNetwork(peer)
-	if err != nil {
-		t.Errorf("UnsubscribeFromNetwork() failed, expected nil, got error: %v", err)
-	}
+	assert.NoError(t, err, "UnsubscribeFromNetwork() failed, expected nil, got error")
 }

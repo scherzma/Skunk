@@ -12,37 +12,6 @@ type SyncResponseHandler struct {
 
 func (s *SyncResponseHandler) HandleMessage(message network.Message) error {
 
-	fmt.Println("SyncResponseHandler")
-	fmt.Println("Message: ", message)
-	/*
-		syncResponse := network.Message{
-			Id:        uuid.New().String(),
-			Timestamp: time.Now().UnixNano(),
-			Content:   string(externalMessagesBytes),
-			FromUser:  chatMessageRepo.GetUsername(),
-			ChatID:    message.ChatID,
-			Operation: network.SYNC_RESPONSE,
-		}
-
-		{4b195e69-636c-4c7a-b0a5-481460637052
-		1713729547132972295
-			[{"Id":"internalMessage123!",
-			"Timestamp":1633029448,
-			"Content":"LOOOOOOOOOOOOOOOOOOOOOOOL",
-			"FromUser":"as23d",
-			"ChatID":"asdf",
-			"Operation":1},
-			{"Id":"internalMessage2",
-			"Timestamp":1633029448,
-			"Content":"WOOW",
-			"FromUser":"as23d",
-			"ChatID":"asdf",
-			"Operation":1}]
-		(Username)
-		asdf
-		2}
-	*/
-
 	chatRepo := p_model.GetNetworkChatsInstance()
 	chatMessageRepo := chatRepo.GetChat(message.ChatID)
 
@@ -54,7 +23,6 @@ func (s *SyncResponseHandler) HandleMessage(message network.Message) error {
 	}
 
 	for _, message := range receivedMessages {
-		fmt.Println("Added message to chat: ", message)
 		chatMessageRepo.AddMessage(message)
 	}
 
