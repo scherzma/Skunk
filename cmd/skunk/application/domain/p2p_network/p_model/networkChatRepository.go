@@ -16,6 +16,9 @@ func GetNetworkChatsInstance() *NetworkChats {
 }
 
 func (n *NetworkChats) AddChat(chatId string) {
+	if _, ok := n.chatMap[chatId]; ok {
+		return
+	}
 	n.chatMap[chatId] = *NewNetworkChatMessages()
 }
 

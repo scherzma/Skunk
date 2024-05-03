@@ -1,0 +1,2129 @@
+__________ ./main.go:
+
+package main
+
+func main() {
+	//TODO implement
+}
+
+
+__________ ./skunk/adapter/in/networkMockAdapter/networkMockAdapter.go:
+
+package networkMockAdapter
+
+import (
+	"fmt"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+	"sync"
+)
+
+// NetworkMockAdapter is a mock adapter for the network
+// It implements the NetworkConnection interface
+
+var (
+	mockConnection *MockConnection // singleton for testing purposes
+	once           sync.Once
+)
+
+type MockConnection struct {
+	subscribers []network.NetworkObserver
+}
+
+func GetMockConnection() *MockConnection {
+	once.Do(func() {
+		mockConnection = &MockConnection{}
+	})
+	return mockConnection
+}
+
+// SubscribeToNetwork is a mock function for the network
+func (m *MockConnection) SubscribeToNetwork(observer network.NetworkObserver) error {
+	m.subscribers = append(m.subscribers, observer)
+	return nil
+}
+
+// UnsubscribeFromNetwork is a mock function for the network
+func (m *MockConnection) UnsubscribeFromNetwork(observer network.NetworkObserver) error {
+	for i, sub := range m.subscribers {
+		if sub == observer {
+			m.subscribers = append(m.subscribers[:i], m.subscribers[i+1:]...)
+			break
+		}
+	}
+	return nil
+}
+
+// SendMessageToNetworkPeer is a mock function for the network
+func (m *MockConnection) SendMessageToNetworkPeer(address string, message network.Message) error {
+	fmt.Println("Sending message to: " + address)
+	fmt.Println("Message: ", message)
+	return nil
+}
+
+// SendMockNetworkMessageToSubscribers is a mock function for the network
+func (m *MockConnection) SendMockNetworkMessageToSubscribers(message network.Message) error {
+	for _, sub := range m.subscribers {
+		sub.Notify(message)
+	}
+	return nil
+}
+
+
+__________ ./skunk/adapter/in/peer/peer.go:
+
+package peer
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"net"
+	"net/http"
+	"sync"
+	"time"
+
+	"github.com/gorilla/websocket"
+	"golang.org/x/net/proxy"
+)
+
+const (
+	MaxConns          = 64                           // MaxConns defines the maximum number of concurrent websocket connections allowed.
+	connWait          = 1 * time.Minute              // connWait specifies the timeout for connecting to another peer.
+	writeWait         = 20 * time.Second             // writeWait specifies the timeout for writing to another peer. has to be high when running over tor
+	shutdownWait      = 0 * time.Second              // shutdownWait specifies the wait time for shutting down the HTTP server. (optional for later)
+	readRateInterval  = 2 * time.Second              // readRateInterval specifies the rate at which it will it is tried to read a message from every connection.
+	readWait          = (readRateInterval * 9) / 10  // readWait specifies the time for trying to read a message from a connection. Needs to be less than readRateInterval
+	heartbeatInterval = 1 * time.Minute              // heartbeatInterval specifies the time interval between consecutive heartbeat messages. when running over tor this should be high
+	pongWait          = (heartbeatInterval * 9) / 10 // pongWait specifies the time a ping response can need before the connection gets classified as closed during an heartbeat. Needs to be less than heartbeatInteval
+	maxMessageSize    = 512                          // maxMessageSize defines the maximum message size allowed from peer. (bytes)
+)
+
+var upgrader = websocket.Upgrader{
+	ReadBufferSize:  maxMessageSize,
+	WriteBufferSize: maxMessageSize,
+}
+
+// Peer encapsulates the state and functionality for a network peer, including its connections,
+// configuration parameters, and synchronisation primitives for safe concurrent access.
+type Peer struct {
+	client     *http.Client               // client is used to make HTTP requests with a custom transport, supporting proxy configuration.
+	readConns  map[string]*websocket.Conn // readConns maintains a map of active websocket connections for reading, indexed by the remote address. Note: Maybe we can later use a sync.Map
+	mapRWLock  sync.RWMutex               // mapRWLock provides concurrent access control for readConns map.
+	writeConn  *websocket.Conn            // writeConn is a dedicated websocket connection reserved for writing messages.
+	readMutex  sync.Mutex                 // readMutex provides concurrent access control for ReadMessage.
+	writeMutex sync.Mutex                 // writeMutex provides concurrent access control for WriteMessage.
+	quitch     chan struct{}              // quitch is used to signal the shutdown process for the peer.
+	Hostname   string                     // Hostname specifies the network address of the peer.
+	Port       string                     // Port on which the peer listens for incoming connections.
+	Address    string                     // Address specifies the complete websocket address: ws://Hostname:Port
+	ProxyAddr  string                     // ProxyAddr specifies the address of SOCKS5 proxy, if used for connections.
+}
+
+// NewPeer initializes a new Peer instance with the given network settings.
+// It also configures the peer's HTTP client for optimal proxy support.
+// hostname needs to include .de, .onion...
+func NewPeer(hostname string, localPort string, remotePort string, proxyAddr string) (*Peer, error) {
+	if remotePort == "" {
+		remotePort = localPort
+	}
+	transport, err := createTransport(proxyAddr) // Attempts to create an HTTP transport, optionally configured with a SOCKS5 proxy.
+	if err != nil {
+		return nil, fmt.Errorf("failed to create SOCKS5 dialer: %w", err)
+	}
+
+	p := Peer{
+		readConns: make(map[string]*websocket.Conn),
+		Hostname:  hostname,
+		Port:      localPort,
+		Address:   fmt.Sprintf("ws://%s:%s", hostname, remotePort),
+		ProxyAddr: proxyAddr,
+		quitch:    make(chan struct{}),
+		client: &http.Client{
+			Transport: transport,
+		},
+	}
+
+	// starts the heartbeat mechanism
+	p.startHeartbeat()
+
+	return &p, nil
+}
+
+// createTransport configures and returns an HTTP transport mechanism.
+// If a proxy address is provided, it configures the transport to use a SOCKS5 proxy.
+func createTransport(proxyAddr string) (*http.Transport, error) {
+	if proxyAddr != "" {
+		dialer, err := proxy.SOCKS5("tcp", proxyAddr, nil, nil)
+		if err != nil {
+			return nil, err
+		}
+		return &http.Transport{
+			Dial: dialer.Dial,
+		}, nil
+	}
+	return &http.Transport{}, nil
+}
+
+// Listen sets up an HTTP server and starts listening on the configured port for incoming websocket connections.
+// It also starts a goroutine for graceful shutdown handling upon receiving a signal on the quitch channel.
+// Optionally it uses the listener provided by tor.
+func (p *Peer) Listen(l net.Listener) {
+	select {
+	case _, ok := <-p.quitch:
+		if !ok {
+			p.quitch = make(chan struct{}) // if closed, then reopen channel
+		}
+	default:
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", p.handler) // Registers the main handler.
+
+	srv := &http.Server{
+		Handler: mux,
+	}
+
+	go func() {
+		var err error
+		if l != nil {
+			// Use the provided listener
+			err = srv.Serve(l)
+		} else {
+			// Listen on the specified port if no listener is provided
+			srv.Addr = ":" + p.Port
+			err = srv.ListenAndServe()
+		}
+		if err != http.ErrServerClosed {
+			log.Printf("HTTP server listen failed: %v", err)
+		}
+	}()
+
+	// Shuts down server when quitch gets closed
+	go func() {
+		select {
+		case <-p.quitch:
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+
+			if err := srv.Shutdown(shutdownCtx); err != nil {
+				log.Printf("HTTP server shutdown failed: %v", err)
+			}
+			defer cancel()
+		}
+	}()
+}
+
+// SetWriteConn designates a specific websocket connection, identified by its address, as the sole connection for sending messages.
+// It verifies that the peer is currently connected to the specified address before setting the connection.
+func (p *Peer) SetWriteConn(address string) error {
+	if len(p.readConns) == 0 {
+		return fmt.Errorf("peer is not connected to any address")
+	}
+
+	if !p.isConnectedTo(address) {
+		return fmt.Errorf("peer is not connected to address: %s", address)
+	}
+
+	p.mapRWLock.RLock()
+	p.writeConn = p.readConns[address]
+	p.mapRWLock.RUnlock()
+	return nil
+}
+
+// Connect establishes a new websocket connection to the specified address and adds it to the pool of read connections.
+// It performs connection setup with a timeout and utilizes the configured HTTP client for the connection attempt.
+func (p *Peer) Connect(address string) error {
+	if address == "" {
+		return fmt.Errorf("empty address is not a valid address")
+	}
+
+	if address == p.Address {
+		return fmt.Errorf("can't connect to own address: %s", p.Address)
+	}
+
+	if p.isConnectedTo(address) {
+		return fmt.Errorf("peer is already connected to address: %s", address)
+	}
+
+	dialer := websocket.Dialer{
+		HandshakeTimeout: connWait,
+	}
+
+	if p.client.Transport != nil {
+		if transport, ok := p.client.Transport.(*http.Transport); ok {
+			dialer.NetDial = transport.Dial
+		}
+	}
+
+	// Set peer address as header so that the other peer knows at which port we are listening
+	headers := http.Header{}
+	headers.Add("X-Peer-Address", p.Address)
+
+	c, _, err := dialer.Dial(address, headers)
+
+	if err != nil {
+		return fmt.Errorf("failed to dial websocket: %v", err)
+	}
+
+	return p.handleNewConnection(c, address)
+}
+
+// ReadMessage attempts to read a single message from the specified websocket connection.
+// It locks the readMutex to ensure exclusive access to the connection during the read operation.
+func (p *Peer) readMessage(conn *websocket.Conn, address string) (string, error) {
+	if conn == nil {
+		return "", fmt.Errorf("invalid connection: connection is nil")
+	}
+
+	conn.SetReadLimit(maxMessageSize)
+	conn.SetReadDeadline(time.Now().Add(readWait))
+	p.readMutex.Lock()
+	_, messageBytes, err := conn.ReadMessage()
+	p.readMutex.Unlock()
+	if err != nil {
+		if p.checkConnIsClosed(address, err) {
+			return "", err
+		} else {
+			return "", nil
+		}
+	}
+
+	return string(messageBytes), nil
+}
+
+// ReadMessages starts readMessage for every conn in readConns in the readRate interval.
+func (p *Peer) ReadMessages(messageCh chan<- string, errorCh chan<- error) {
+	ticker := time.NewTicker(readRateInterval)
+	go func() {
+		for {
+			select {
+			case <-ticker.C:
+				p.mapRWLock.RLock()
+				for addr, conn := range p.readConns {
+					go func() {
+						msg, err := p.readMessage(conn, addr)
+						if err != nil {
+							errorCh <- err
+						} else if msg != "" { // "" can happen when an error occurs when reading from
+							// the connection but the error is not due to the
+							// connection being closed.
+							messageCh <- msg
+						}
+					}()
+				}
+				p.mapRWLock.RUnlock()
+			case <-p.quitch:
+				ticker.Stop()
+				return
+			}
+		}
+	}()
+}
+
+// WriteMessage sends a message using the designated write connection.
+// It locks the writeMutex to ensure exclusive access to the connection during the write operation.
+func (p *Peer) WriteMessage(message string) error {
+	if p.writeConn == nil {
+		return fmt.Errorf("no write connection is set")
+	}
+
+	// Append From p.Address: to message so that the other peers knows which peer sent him the message.
+	fullMessage := fmt.Sprintf("From %s: %s", p.Address, message)
+
+	p.writeConn.SetWriteDeadline(time.Now().Add(writeWait))
+	p.writeMutex.Lock()
+	err := p.writeConn.WriteMessage(websocket.TextMessage, []byte(fullMessage))
+	p.writeMutex.Unlock()
+	if err != nil {
+		p.checkConnIsClosed(p.writeConn.RemoteAddr().String(), err)
+		return err
+	}
+
+	return nil
+}
+
+// Shutdown initiates the shutdown process for the peer, closing all active websocket connections.
+// and signaling the quitch channel to stop the HTTP server.
+func (p *Peer) Shutdown() {
+	p.mapRWLock.RLock()
+	defer p.mapRWLock.RUnlock()
+
+	for _, conn := range p.readConns {
+		conn.Close()
+	}
+	p.readConns = make(map[string]*websocket.Conn) // Resets the connection pool.
+	p.writeConn = nil
+
+	close(p.quitch) // Signals the shutdown listener to initiate server shutdown.
+}
+
+// handler is the HTTP request handler for upgrading incoming requests to websocket connections.
+// It accepts a websocket connection and adds it to the pool of read connections.
+func (p *Peer) handler(w http.ResponseWriter, r *http.Request) {
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Printf("failed to upgrade incoming connection: %v", err)
+		return
+	}
+
+	if err := p.handleNewConnection(conn, r.Header.Get("X-Peer-Address")); err != nil {
+		log.Printf("failed to handle new connection: %v", err)
+		conn.Close() // TO-DO: Send and handle error that the peer reached its maximum of connections.
+	}
+}
+
+// handleNewConnection adds a newly established websocket connection to the readConns map.
+// It ensures that the total number of connections does not exceed the maximum allowed.
+func (p *Peer) handleNewConnection(conn *websocket.Conn, address string) error {
+	if len(p.readConns) >= MaxConns {
+		return fmt.Errorf("maximum number of connections reached: %d", MaxConns)
+	}
+
+	p.mapRWLock.Lock()
+	p.readConns[address] = conn
+	p.mapRWLock.Unlock()
+	return nil
+}
+
+// StartHearbeat initiates a periodic hearbeat mechanism for all active connections.
+// It sends a ping message at regular intervals to each connection to ensure they are alive.
+func (p *Peer) startHeartbeat() {
+	ticker := time.NewTicker(heartbeatInterval)
+	go func() {
+		for {
+			select {
+			case <-ticker.C: // On each tick, send heartbeat to all connections.
+				p.sendHeartbeatToAll()
+			case <-p.quitch:
+				ticker.Stop()
+				return
+			}
+		}
+	}()
+}
+
+// sendHearbeatToAll sends a hearbeat signal (ping) to each active connection.
+// If a connection fails to respond to the heartbeat, it removes the connection.
+func (p *Peer) sendHeartbeatToAll() {
+	//p.writeMutex.Lock()
+	//defer p.writeMutex.Unlock()
+
+	// THIS IS NOT GOOD
+	for address, conn := range p.readConns {
+		if conn == nil {
+			p.mapRWLock.Lock()
+			delete(p.readConns, address)
+			p.mapRWLock.Unlock()
+		} else {
+			conn.SetWriteDeadline(time.Now().Add(pongWait))
+			if err := conn.WriteMessage(websocket.PingMessage, []byte{}); err != nil {
+				p.mapRWLock.Lock()
+				delete(p.readConns, address) // Optionally, we could try to reinitialize the connection here.
+				p.mapRWLock.Unlock()
+			}
+		}
+	}
+}
+
+// isConnectedTo checks if there is an existing websocket connection to the specified address.
+func (p *Peer) isConnectedTo(address string) bool {
+	p.mapRWLock.RLock()
+	_, ok := p.readConns[address]
+	p.mapRWLock.RUnlock()
+	return ok
+}
+
+// checkConnIsClosed evaluates if an error during a read or write operation was due to the connection being closed.
+// If so, it removes the connection from the readConns map to prevent furter use.
+func (p *Peer) checkConnIsClosed(address string, err error) bool {
+	if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
+		p.mapRWLock.Lock()
+		delete(p.readConns, address)
+		p.mapRWLock.Unlock()
+		return true
+	}
+	return false
+}
+
+
+__________ ./skunk/adapter/in/tor/tor.go:
+
+package tor
+
+import (
+	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strconv"
+	"time"
+
+	"github.com/cretz/bine/tor"
+	"github.com/ipsn/go-libtor"
+)
+
+// TorConfig holds configuration parameters for a Tor instance.
+type TorConfig struct {
+	DataDir              string // directory for storing tor data files.
+	SocksPort            string // SOCKS5 proxy port for tor connection.
+	LocalPort            string // local port for incoming connections.
+	RemotePort           string // remote port for hiddenservice.
+	DeleteDataDirOnClose bool   // flag to delete data directory on closing tor.
+	ReusePrivateKey      bool   // flag to reuse the private key across sessions.
+	UseEmbedded          bool   // use the embedded tor process (go-libtor)
+}
+
+// Tor wraps a tor configuration and instance for managing tor services.
+type Tor struct {
+	torConfig   *TorConfig // configuration for the tor instance.
+	torInstance *tor.Tor   // the tor instance.
+}
+
+// NewTor initializes a new tor instance with the provided configuration.
+func NewTor(torConfig *TorConfig) (*Tor, error) {
+	// basic validation of configuration paramters.
+	if torConfig.SocksPort == "" {
+		return nil, fmt.Errorf("no tor socks port provided")
+	}
+	if torConfig.SocksPort == "9050" {
+		return nil, fmt.Errorf("can't use 9050 as tor socks port")
+	}
+	if torConfig.LocalPort == "" {
+		return nil, fmt.Errorf("no local port given")
+	}
+	if torConfig.RemotePort == "" {
+		return nil, fmt.Errorf("no remote port given")
+	}
+	if torConfig.LocalPort == torConfig.SocksPort || torConfig.RemotePort == torConfig.SocksPort {
+		return nil, fmt.Errorf("ports for hiddenservice can't match tor socks port")
+	}
+
+	if torConfig.DataDir == "" {
+		torConfig.DataDir = "tor-data"
+	}
+
+	return &Tor{
+		torConfig:   torConfig,
+		torInstance: nil,
+	}, nil
+}
+
+// StarTor starts the tor instance with the configured settings.
+func (t *Tor) StartTor() error {
+	if t.torInstance != nil {
+		return fmt.Errorf("can't start the same tor instance twice")
+	}
+
+	conf := &tor.StartConf{
+		NoAutoSocksPort: true, // needs to be true to be able to set a custom socks port
+		ExtraArgs:       []string{"--SocksPort", t.torConfig.SocksPort},
+		DataDir:         t.torConfig.DataDir,
+		DebugWriter:     os.Stdout, // just for testing. might change later
+	}
+	// if configured use the go-libtor embedded tor process creator
+	if t.torConfig.UseEmbedded {
+		conf.ProcessCreator = libtor.Creator
+	}
+
+	torInstance, err := tor.Start(nil, conf)
+	if err != nil {
+		return err
+	}
+
+	t.torInstance = torInstance
+	return nil
+}
+
+// StartHiddenService starts a hidden service using the current tor instance.
+func (t *Tor) StartHiddenService() (*tor.OnionService, error) {
+	if t.torInstance == nil {
+		return nil, fmt.Errorf("tor needs to be started before a hiddenservice can be created")
+	}
+
+	// LocalPort and RemotePort are strings because we want to provide a unified interface for the tor config
+	// where you don't need to figure out which port / address has which type.
+	remotePortInt, err := strconv.Atoi(t.torConfig.RemotePort)
+	if err != nil {
+		return nil, err
+	}
+	localPortInt, err := strconv.Atoi(t.torConfig.LocalPort)
+	if err != nil {
+		return nil, err
+	}
+
+	conf := &tor.ListenConf{
+		Version3:    true, // uses v3 onion service and ed25519 key
+		LocalPort:   localPortInt,
+		RemotePorts: []int{remotePortInt},
+	}
+
+	// attempt to read the private key if ReusePrivateKey is true
+	if t.torConfig.ReusePrivateKey {
+		privateKeyPath := filepath.Join(t.torConfig.DataDir, "hidden_service_private_key")
+		var privateKey ed25519.PrivateKey
+
+		if _, err := os.Stat(privateKeyPath); err == nil {
+			keyData, readErr := os.ReadFile(privateKeyPath)
+			if readErr != nil {
+				return nil, fmt.Errorf("failed to read private key: %v", readErr)
+			}
+			privateKey = ed25519.PrivateKey(keyData)
+		} else {
+			// generate a new private key
+			_, privKey, genErr := ed25519.GenerateKey(rand.Reader)
+			if genErr != nil {
+				return nil, fmt.Errorf("failed to generate private key: %v", genErr)
+			}
+			privateKey = privKey
+			// save newly generated private key
+			if err := os.WriteFile(privateKeyPath, privKey.Seed(), 0600); err != nil {
+				return nil, fmt.Errorf("failed to save private key: %v", err)
+			}
+		}
+		conf.Key = privateKey
+	}
+
+	// wait at most a few minutes to publish the service
+	listenCtx, listenCancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer listenCancel()
+
+	onion, err := t.torInstance.Listen(listenCtx, conf)
+	if err != nil {
+		return nil, err
+	}
+
+	return onion, nil
+}
+
+// StopTor stops the tor instance (and hiddenservice) and handles cleanup.
+func (t *Tor) StopTor() error {
+	err := t.torInstance.Close()
+	if err != nil {
+		return fmt.Errorf("error stopping tor: %v", err)
+	}
+	t.torInstance = nil
+
+	// clean up data directory if needed.
+	if t.torConfig.DataDir != "" && t.torConfig.DeleteDataDirOnClose {
+		if err := os.RemoveAll(t.torConfig.DataDir); err != nil {
+			return fmt.Errorf("failed to remove data dir %v: %v", t.torConfig.DataDir, err)
+		}
+	}
+	return nil
+}
+
+
+__________ ./skunk/adapter/out/storage/storageMessageQueueSQLite.go:
+
+package storage
+
+import (
+	"database/sql"
+	_ "github.com/mattn/go-sqlite3"
+	"log"
+)
+
+type StoreMessageQueueSQLite struct {
+}
+
+func (s *StoreMessageQueueSQLite) StoreMessageQueue(string2 string) error {
+	db, err := sql.Open("sqlite3", "./yourdatabase.db")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	// Check for table existence and create if not exists
+	createTableSQL := `CREATE TABLE IF NOT EXISTS exampleTable (
+        "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,     
+        "data" TEXT
+    );` // SQL Statement for Create Table
+
+	_, err = db.Exec(createTableSQL)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return nil
+}
+
+func (s *StoreMessageQueueSQLite) RetriveMessageQueue() (string, error) {
+	return "", nil
+}
+
+
+__________ ./skunk/adapter/out/frontend/mockFrontend/mockFrontendAdapter.go:
+
+package mockFrontend
+
+import (
+	"fmt"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/frontend"
+	"sync"
+)
+
+var (
+	mockFrontendInstance *MockFrontend
+	once                 sync.Once
+)
+
+type MockFrontend struct {
+	observers []frontend.FrontendObserver
+}
+
+func GetMockFrontendInstance() *MockFrontend {
+	once.Do(func() {
+		mockFrontendInstance = &MockFrontend{
+			observers: make([]frontend.FrontendObserver, 0),
+		}
+	})
+	return mockFrontendInstance
+}
+
+func (mf *MockFrontend) SubscribeToFrontend(observer frontend.FrontendObserver) error {
+	mf.observers = append(mf.observers, observer)
+	return nil
+}
+
+func (mf *MockFrontend) UnsubscribeFromFrontend(observer frontend.FrontendObserver) error {
+	for i, obs := range mf.observers {
+		if obs == observer {
+			mf.observers = append(mf.observers[:i], mf.observers[i+1:]...)
+			return nil
+		}
+	}
+	return fmt.Errorf("observer not found")
+}
+
+func (mf *MockFrontend) SendToFrontend(message frontend.FrontendMessage) error {
+	for _, observer := range mf.observers {
+		err := observer.Notify(message)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (mf *MockFrontend) SendMockFrontendMessageToSubscribers(message frontend.FrontendMessage) error {
+	return mf.SendToFrontend(message)
+}
+
+
+__________ ./skunk/application/domain/chat/chatLogicInterface.go:
+
+package chat
+
+type ChatLogic interface {
+	RecieveMessage() error
+	ReceiveChatInvitation() error
+	PeerLeavesChat() error
+	PeerJoinsChat() error
+	ReceiveFile() error
+	PeerSetsUsername() error
+}
+
+
+__________ ./skunk/application/domain/chat/c_model/chat.go:
+
+package c_model
+
+type Chat struct {
+	chatId string
+}
+
+
+__________ ./skunk/application/domain/chat/c_model/user.go:
+
+package c_model
+
+type User struct {
+	UserId   string
+	Username string
+}
+
+
+__________ ./skunk/application/domain/chat/c_service/chatApp.go:
+
+package c_service
+
+import (
+	"github.com/scherzma/Skunk/cmd/skunk/application/domain/chat/c_service/frontendMessageHandlers"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/frontend"
+	"sync"
+)
+
+type ChatApp struct {
+	frontends []frontend.Frontend
+	handlers  map[frontend.OperationType]frontendMessageHandlers.FrontendMessageHandler
+}
+
+var (
+	chatService *ChatApp
+	once        sync.Once
+)
+
+func GetChatServiceInstance() *ChatApp {
+	once.Do(func() {
+		handlers := map[frontend.OperationType]frontendMessageHandlers.FrontendMessageHandler{
+			frontend.JOIN_CHAT:      &frontendMessageHandlers.JoinChatHandler{},
+			frontend.SEND_FILE:      &frontendMessageHandlers.SendFileHandler{},
+			frontend.SET_USERNAME:   &frontendMessageHandlers.SetUsernameHandler{},
+			frontend.SEND_MESSAGE:   &frontendMessageHandlers.SendMessageHandler{},
+			frontend.CREATE_CHAT:    &frontendMessageHandlers.CreateChatHandler{},
+			frontend.INVITE_TO_CHAT: &frontendMessageHandlers.InviteToChatHandler{},
+			frontend.LEAVE_CHAT:     &frontendMessageHandlers.LeaveChatHandler{},
+			frontend.TEST_MESSAGE:   &frontendMessageHandlers.TestMessageHandler{},
+		}
+
+		chatService = &ChatApp{
+			frontends: []frontend.Frontend{},
+			handlers:  handlers,
+		}
+	})
+
+	return chatService
+}
+
+// FrontendObserver: Gets notified when a frontend sends a message to the chat
+func (c *ChatApp) Notify(message frontend.FrontendMessage) error {
+	// TODO: Implement
+	return nil
+}
+
+func (c *ChatApp) AddFrontend(frontend frontend.Frontend) {
+	c.frontends = append(c.frontends, frontend)
+}
+
+func (c *ChatApp) RemoveFrontend(frontend frontend.Frontend) {
+	for i, f := range c.frontends {
+		if f == frontend {
+			c.frontends = append(c.frontends[:i], c.frontends[i+1:]...)
+			return
+		}
+	}
+}
+
+func (c *ChatApp) SendMessageToAllFrontends(message frontend.FrontendMessage) {
+	for _, f := range c.frontends {
+		f.SendToFrontend(message)
+	}
+}
+
+func (c *ChatApp) ProcessMessageForUser(message frontend.FrontendMessage) error {
+	// TODO: Implement
+	return nil
+}
+
+
+__________ ./skunk/application/domain/chat/c_service/frontendMessageHandlers/frontendMessageHandlerInterface.go:
+
+package frontendMessageHandlers
+
+import "github.com/scherzma/Skunk/cmd/skunk/application/port/frontend"
+
+type FrontendMessageHandler interface {
+	HandleMessage(message frontend.FrontendMessage) error
+}
+
+
+__________ ./skunk/application/domain/chat/c_service/frontendMessageHandlers/sendMessageHandler.go:
+
+package frontendMessageHandlers
+
+import (
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/frontend"
+)
+
+type SendMessageHandler struct{}
+
+func (s *SendMessageHandler) HandleMessage(message frontend.FrontendMessage) error {
+	// TODO: Implement
+	return nil
+}
+
+
+__________ ./skunk/application/domain/chat/c_service/frontendMessageHandlers/createChatHandler.go:
+
+package frontendMessageHandlers
+
+import (
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/frontend"
+)
+
+type CreateChatHandler struct{}
+
+func (c *CreateChatHandler) HandleMessage(message frontend.FrontendMessage) error {
+	// TODO: Implement
+	return nil
+}
+
+
+__________ ./skunk/application/domain/chat/c_service/frontendMessageHandlers/joinChatHandler.go:
+
+package frontendMessageHandlers
+
+import (
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/frontend"
+)
+
+type JoinChatHandler struct{}
+
+func (j *JoinChatHandler) HandleMessage(message frontend.FrontendMessage) error {
+	// TODO: Implement
+	return nil
+}
+
+
+__________ ./skunk/application/domain/chat/c_service/frontendMessageHandlers/leaveChatHandler.go:
+
+package frontendMessageHandlers
+
+import (
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/frontend"
+)
+
+type LeaveChatHandler struct{}
+
+func (l *LeaveChatHandler) HandleMessage(message frontend.FrontendMessage) error {
+	// TODO: Implement
+	return nil
+}
+
+
+__________ ./skunk/application/domain/chat/c_service/frontendMessageHandlers/inviteToChatHandler.go:
+
+package frontendMessageHandlers
+
+import (
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/frontend"
+)
+
+type InviteToChatHandler struct{}
+
+func (i *InviteToChatHandler) HandleMessage(message frontend.FrontendMessage) error {
+	// TODO: Implement
+	return nil
+}
+
+
+__________ ./skunk/application/domain/chat/c_service/frontendMessageHandlers/sendFileHandler.go:
+
+package frontendMessageHandlers
+
+import (
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/frontend"
+)
+
+type SendFileHandler struct{}
+
+func (s *SendFileHandler) HandleMessage(message frontend.FrontendMessage) error {
+	// TODO: Implement
+	return nil
+}
+
+
+__________ ./skunk/application/domain/chat/c_service/frontendMessageHandlers/setUsernameHandler.go:
+
+package frontendMessageHandlers
+
+import (
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/frontend"
+)
+
+type SetUsernameHandler struct{}
+
+func (s *SetUsernameHandler) HandleMessage(message frontend.FrontendMessage) error {
+	// TODO: Implement
+	return nil
+}
+
+
+__________ ./skunk/application/domain/chat/c_service/frontendMessageHandlers/testMessageHandler.go:
+
+package frontendMessageHandlers
+
+import (
+	"fmt"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/frontend"
+)
+
+type TestMessageHandler struct{}
+
+func (t *TestMessageHandler) HandleMessage(message frontend.FrontendMessage) error {
+	fmt.Println("TestMessageHandler: ", message)
+	return nil
+}
+
+
+__________ ./skunk/application/domain/p2p_network/networkLogicInterface.go:
+
+package p2p_network
+
+import "github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+
+type NetworkLogic interface {
+	// TODO: Implement
+	SendMessageToNetwork(message network.Message) error
+}
+
+
+__________ ./skunk/application/domain/p2p_network/p_model/networkChatMessageRepository.go:
+
+package p_model
+
+import (
+	"errors"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+)
+
+type NetworkChatMessages struct {
+	chatName        string
+	chatMessagesMap map[string]network.Message
+}
+
+func NewNetworkChatMessages() *NetworkChatMessages {
+	return &NetworkChatMessages{
+		chatMessagesMap: make(map[string]network.Message),
+	}
+}
+
+func (ncm *NetworkChatMessages) AddMessage(message network.Message) error {
+	if _, exists := ncm.chatMessagesMap[message.Id]; exists {
+		return errors.New("message already exists")
+	}
+
+	ncm.chatMessagesMap[message.Id] = message
+	return nil
+}
+
+func (ncm *NetworkChatMessages) GetMessages() []network.Message {
+	messages := make([]network.Message, 0, len(ncm.chatMessagesMap))
+	for _, message := range ncm.chatMessagesMap {
+		messages = append(messages, message)
+	}
+	return messages
+}
+
+func (ncm *NetworkChatMessages) GetMissingExternalMessages(inputMessageIDs []string) []network.Message {
+	missingMessages := make([]network.Message, 0)
+	inputMap := make(map[string]bool)
+
+	// Convert input slice to map for efficient lookup
+	for _, id := range inputMessageIDs {
+		inputMap[id] = true
+	}
+
+	for _, message := range ncm.chatMessagesMap {
+		if !inputMap[message.Id] {
+			missingMessages = append(missingMessages, message)
+		}
+	}
+	return missingMessages
+}
+
+func (ncm *NetworkChatMessages) GetMissingInternalMessages(inputMessageIDs []string) []network.Message {
+	missingMessages := make([]network.Message, 0)
+	ncmMap := ncm.chatMessagesMap
+
+	for _, id := range inputMessageIDs {
+		if message, exists := ncmMap[id]; !exists {
+			missingMessages = append(missingMessages, message)
+		}
+	}
+	return missingMessages
+}
+
+func (ncm *NetworkChatMessages) GetMissingInternalMessageIDs(inputMessageIDs []string) []string {
+	missingMessageIDs := make([]string, 0)
+	ncmMap := ncm.chatMessagesMap
+
+	for _, id := range inputMessageIDs {
+		if _, exists := ncmMap[id]; !exists {
+			missingMessageIDs = append(missingMessageIDs, id)
+		}
+	}
+	return missingMessageIDs
+}
+
+func (ncm *NetworkChatMessages) GetUsername() string {
+	return "todo: implement me (Username)" // TODO implement me
+}
+
+func (ncm *NetworkChatMessages) GetChatName() string {
+	return ncm.chatName
+}
+
+func (ncm *NetworkChatMessages) SetChatName(chatName string) {
+	ncm.chatName = chatName
+}
+
+
+__________ ./skunk/application/domain/p2p_network/p_model/networkChatRepository.go:
+
+package p_model
+
+type NetworkChats struct {
+	chatMap map[string]NetworkChatMessages
+}
+
+var instance *NetworkChats
+
+func GetNetworkChatsInstance() *NetworkChats {
+	if instance == nil {
+		instance = &NetworkChats{
+			chatMap: make(map[string]NetworkChatMessages),
+		}
+	}
+	return instance
+}
+
+func (n *NetworkChats) AddChat(chatId string) {
+	if _, ok := n.chatMap[chatId]; ok {
+		return
+	}
+	n.chatMap[chatId] = *NewNetworkChatMessages()
+}
+
+func (n *NetworkChats) GetChat(chatId string) NetworkChatMessages {
+	if _, exists := n.chatMap[chatId]; !exists { //TODO change default behavior; probably should not create a new chat if it does not exist
+		n.AddChat(chatId)
+	}
+	return n.chatMap[chatId]
+}
+
+
+__________ ./skunk/application/domain/p2p_network/p_model/networkPeer.go:
+
+package p_model
+
+import (
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+)
+
+type NetworkPeer struct {
+	Id                   string
+	NetworkPeerPublicKey string
+	NetworkPeerAddress   string
+	Connection           network.NetworkConnection
+}
+
+func (n *NetworkPeer) SendMessage(message network.Message) error {
+	n.Connection.SendMessageToNetworkPeer(n.NetworkPeerAddress, message)
+	return nil
+}
+
+
+__________ ./skunk/application/domain/p2p_network/p_service/networkChatService.go:
+
+package p_service
+
+type MessageCRDT struct {
+	chatMessagesDictionary map[string]bool
+}
+
+
+__________ ./skunk/application/domain/p2p_network/p_service/networkPeerManager.go:
+
+package p_service
+
+
+__________ ./skunk/application/domain/p2p_network/p_service/securityService.go:
+
+package p_service
+
+import "github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+
+type SecurityContext struct {
+}
+
+// SecurityContext is a service that provides security checks for the network
+// It should be possible to implement all security checks in this service
+
+func (s *SecurityContext) ValidateOutgoingMessage(message network.Message) bool {
+	return true
+}
+
+func (s *SecurityContext) ValidateIncomingMessage(message network.Message) bool {
+	return true
+}
+
+func (s *SecurityContext) ValidatePeer(peer string) bool {
+	return true
+}
+
+
+__________ ./skunk/application/domain/p2p_network/p_service/messageHandlers/createChatHandler.go:
+
+package messageHandlers
+
+import (
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+)
+
+type CreateChatHandler struct {
+}
+
+func (handler *CreateChatHandler) HandleMessage(message network.Message) error {
+	//TODO implement
+	
+	// Is this needed? In which case would i send a message to someone else about a created chat?
+	return nil
+}
+
+
+__________ ./skunk/application/domain/p2p_network/p_service/messageHandlers/inviteToChatHandler.go:
+
+package messageHandlers
+
+import (
+	"encoding/json"
+	"fmt"
+	"github.com/scherzma/Skunk/cmd/skunk/application/domain/chat"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+)
+
+type InviteToChatHandler struct {
+	userChatLogic chat.ChatLogic
+}
+
+func (i *InviteToChatHandler) HandleMessage(message network.Message) error {
+
+	// chatRepo := p_model.GetNetworkChatsInstance()
+
+	// Structure of the message:
+	/*
+		{
+			"chatId": "asdf",
+			"chatName": "asdf",
+			"peers": [
+				"asdf",
+				"asdf"
+			]
+		}
+	*/
+
+	var content struct {
+		ChatID   string `json:"chatId"`
+		ChatName string `json:"chatName"`
+		Peers    []string
+	}
+
+	err := json.Unmarshal([]byte(message.Content), &content)
+	if err != nil {
+		fmt.Println("Error unmarshalling message content")
+		return err
+	}
+
+	i.userChatLogic.ProcessMessageForUser(message)
+
+	return nil
+}
+
+
+__________ ./skunk/application/domain/p2p_network/p_service/messageHandlers/joinChatHandler.go:
+
+package messageHandlers
+
+import "github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+
+type JoinChatHandler struct{}
+
+func (j *JoinChatHandler) HandleMessage(message network.Message) error {
+	//TODO implement
+	return nil
+}
+
+
+__________ ./skunk/application/domain/p2p_network/p_service/messageHandlers/leaveChatHandler.go:
+
+package messageHandlers
+
+import (
+	"fmt"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+)
+
+type LeaveChatHandler struct{}
+
+func (l *LeaveChatHandler) HandleMessage(message network.Message) error {
+	//TODO implement
+	fmt.Println("LeaveChatHandler")
+	return nil
+}
+
+
+__________ ./skunk/application/domain/p2p_network/p_service/messageHandlers/messageHandlerInterface.go:
+
+package messageHandlers
+
+import "github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+
+type MessageHandler interface {
+	HandleMessage(message network.Message) error
+}
+
+
+__________ ./skunk/application/domain/p2p_network/p_service/messageHandlers/sendFileHandler.go:
+
+package messageHandlers
+
+import (
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+)
+
+type SendFileHandler struct{}
+
+func (s *SendFileHandler) HandleMessage(message network.Message) error {
+	//TODO implement
+	return nil
+}
+
+
+__________ ./skunk/application/domain/p2p_network/p_service/messageHandlers/setUsernameHandler.go:
+
+package messageHandlers
+
+import (
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+)
+
+type SetUsernameHandler struct{}
+
+func (s *SetUsernameHandler) HandleMessage(message network.Message) error {
+	//TODO implement
+	return nil
+}
+
+
+__________ ./skunk/application/domain/p2p_network/p_service/messageHandlers/testMessage2Handler.go:
+
+package messageHandlers
+
+import (
+	"fmt"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+)
+
+type TestMessageHandler2 struct {
+}
+
+func (t *TestMessageHandler2) HandleMessage(message network.Message) error {
+	fmt.Println("TestMessageHandler_2: ", message.Content)
+	return nil
+}
+
+
+__________ ./skunk/application/domain/p2p_network/p_service/messageHandlers/sendMessageHandler.go:
+
+package messageHandlers
+
+import (
+	"fmt"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+)
+
+type SendMessageHandler struct{}
+
+func (s *SendMessageHandler) HandleMessage(message network.Message) error {
+	fmt.Println("HandleMessage: ", message.Content)
+	// TODO define interface for ChatLogic with Pub/Sub
+
+	return nil
+}
+
+
+__________ ./skunk/application/domain/p2p_network/p_service/messageHandlers/syncRequestHandler.go:
+
+package messageHandlers
+
+import (
+	"encoding/json"
+	"fmt"
+	"github.com/google/uuid"
+	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_model"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+	"time"
+)
+
+type SyncRequestHandler struct {
+}
+
+func (s *SyncRequestHandler) HandleMessage(message network.Message) error {
+
+	chatRepo := p_model.GetNetworkChatsInstance()
+	chatMessageRepo := chatRepo.GetChat(message.ChatID)
+
+	// Parse the content of the message
+	/*
+		{
+		  "existingMessageIds": [
+			"<message id 1>",
+			"<message id 2>",
+			...
+		  ]
+		}
+	*/
+
+	var content struct {
+		ExistingMessageIDs []string `json:"existingMessageIds"`
+	}
+	err := json.Unmarshal([]byte(message.Content), &content)
+	if err != nil {
+		fmt.Println("Error unmarshalling message content")
+		return err
+	}
+
+	// Find difference between "message" already known messages and own messages that the other peer does not know
+	missingExternalMessages := chatMessageRepo.GetMissingExternalMessages(content.ExistingMessageIDs)
+	missingInternalMessages := chatMessageRepo.GetMissingInternalMessageIDs(content.ExistingMessageIDs)
+
+	// Convert missingExternalMessages to a JSON string
+	externalMessagesBytes, err := json.Marshal(missingExternalMessages)
+	if err != nil {
+		fmt.Println("Error marshalling missing external messages")
+		return err
+	}
+
+	// Convert missingInternalMessages to a JSON string
+	internalMessagesBytes, err := json.Marshal(missingInternalMessages)
+	if err != nil {
+		fmt.Println("Error marshalling missing internal messages")
+		return err
+	}
+
+	// Send the sync response to the other peer
+	syncResponse := network.Message{
+		Id:        uuid.New().String(),
+		Timestamp: time.Now().UnixNano(),
+		Content:   string(externalMessagesBytes),
+		FromUser:  chatMessageRepo.GetUsername(),
+		ChatID:    message.ChatID,
+		Operation: network.SYNC_RESPONSE,
+	}
+
+	// Send sync request to other peer to get the difference between the messages that the other peer knows this peer does not know
+	syncRequest := network.Message{
+		Id:        uuid.New().String(),
+		Timestamp: time.Now().UnixNano(),
+		Content:   string(internalMessagesBytes),
+		FromUser:  chatMessageRepo.GetUsername(),
+		ChatID:    message.ChatID,
+		Operation: network.SYNC_REQUEST,
+	}
+
+	peer := GetPeerInstance()
+	peer.SendMessageToNetworkPeer("addressResponse", syncResponse)
+	peer.SendMessageToNetworkPeer("addressRequest", syncRequest)
+
+	return nil
+}
+
+
+__________ ./skunk/application/domain/p2p_network/p_service/messageHandlers/syncResponseHandler.go:
+
+package messageHandlers
+
+import (
+	"encoding/json"
+	"fmt"
+	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_model"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+)
+
+type SyncResponseHandler struct {
+}
+
+func (s *SyncResponseHandler) HandleMessage(message network.Message) error {
+
+	chatRepo := p_model.GetNetworkChatsInstance()
+	chatMessageRepo := chatRepo.GetChat(message.ChatID)
+
+	var receivedMessages []network.Message
+	err := json.Unmarshal([]byte(message.Content), &receivedMessages)
+	if err != nil {
+		fmt.Println("Error unmarshalling message content")
+		return err
+	}
+
+	for _, message := range receivedMessages {
+		chatMessageRepo.AddMessage(message)
+	}
+
+	return nil
+}
+
+
+__________ ./skunk/application/domain/p2p_network/p_service/messageHandlers/testMessageHandler.go:
+
+package messageHandlers
+
+import (
+	"fmt"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+)
+
+type TestMessageHandler struct {
+}
+
+func (t *TestMessageHandler) HandleMessage(message network.Message) error {
+
+	fmt.Println("TestMessageHandler: ", message.Content)
+	return nil
+}
+
+
+__________ ./skunk/application/domain/p2p_network/p_service/messageHandlers/peer.go:
+
+package messageHandlers
+
+import (
+	"errors"
+	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_model"
+	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_service"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+	"sync"
+)
+
+var (
+	peerInstance *Peer
+	once         sync.Once
+)
+
+type Peer struct {
+	Chats           p_model.NetworkChats
+	handlers        map[network.OperationType]MessageHandler
+	connections     []network.NetworkConnection
+	securityContext p_service.SecurityContext
+}
+
+func GetPeerInstance() *Peer {
+	once.Do(func() {
+		handlers := map[network.OperationType]MessageHandler{
+			network.JOIN_CHAT:      &JoinChatHandler{},
+			network.SEND_FILE:      &SendFileHandler{},
+			network.SYNC_REQUEST:   &SyncRequestHandler{},
+			network.SYNC_RESPONSE:  &SyncResponseHandler{},
+			network.SET_USERNAME:   &SetUsernameHandler{},
+			network.SEND_MESSAGE:   &SendMessageHandler{},
+			network.CREATE_CHAT:    &CreateChatHandler{},
+			network.INVITE_TO_CHAT: &InviteToChatHandler{},
+			network.LEAVE_CHAT:     &LeaveChatHandler{},
+			network.TEST_MESSAGE:   &TestMessageHandler{},
+			network.TEST_MESSAGE_2: &TestMessageHandler2{},
+		}
+
+		peerInstance = &Peer{
+			Chats:           p_model.NetworkChats{},
+			handlers:        handlers,
+			connections:     []network.NetworkConnection{},
+			securityContext: p_service.SecurityContext{},
+		}
+	})
+
+	return peerInstance
+}
+
+func (p *Peer) AddNetworkConnection(connection network.NetworkConnection) {
+	p.connections = append(p.connections, connection)
+	connection.SubscribeToNetwork(p)
+}
+
+func (p *Peer) RemoveNetworkConnection(connection network.NetworkConnection) {
+	for i, c := range p.connections {
+		if c == connection {
+			p.connections = append(p.connections[:i], p.connections[i+1:]...)
+			break
+		}
+	}
+}
+
+func (p *Peer) Notify(message network.Message) error {
+	if handler, exists := p.handlers[message.Operation]; exists {
+		if !p.securityContext.ValidateIncomingMessage(message) {
+			return errors.New("invalid message")
+		}
+
+		return handler.HandleMessage(message)
+	}
+	return errors.New("invalid message operation")
+}
+
+func (p *Peer) SendMessageToNetworkPeer(address string, message network.Message) error {
+
+	if !p.securityContext.ValidateOutgoingMessage(message) {
+		return errors.New("invalid message")
+	}
+
+	for _, connection := range p.connections {
+		if err := connection.SendMessageToNetworkPeer(address, message); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+
+__________ ./skunk/application/port/store/storePeerPort.go:
+
+package store
+
+import (
+	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_service/messageHandlers"
+)
+
+type StorePeer interface {
+	StorePeer(peer messageHandlers.Peer)
+	RetrivePeers() ([]messageHandlers.Peer, error)
+	RetrivePeer(peerId string) (messageHandlers.Peer, error)
+}
+
+
+__________ ./skunk/application/port/network/networkInteractionPort.go:
+
+package network
+
+type OperationType int
+
+const (
+	SEND_MESSAGE   OperationType = iota
+	SYNC_REQUEST   OperationType = iota
+	SYNC_RESPONSE  OperationType = iota
+	CREATE_CHAT    OperationType = iota
+	JOIN_CHAT      OperationType = iota
+	LEAVE_CHAT     OperationType = iota
+	INVITE_TO_CHAT OperationType = iota
+	SEND_FILE      OperationType = iota
+	SET_USERNAME   OperationType = iota
+	TEST_MESSAGE   OperationType = iota
+	TEST_MESSAGE_2 OperationType = iota
+)
+
+type Message struct {
+	Id        string
+	Timestamp int64
+	Content   string
+	FromUser  string // UserID
+	ChatID    string // ChatID
+	Operation OperationType
+}
+
+type NetworkObserver interface {
+	Notify(message Message) error
+}
+
+type NetworkConnection interface {
+	SubscribeToNetwork(observer NetworkObserver) error
+	UnsubscribeFromNetwork(observer NetworkObserver) error
+	SendMessageToNetworkPeer(address string, message Message) error
+}
+
+
+__________ ./skunk/application/port/frontend/frontendPort.go:
+
+package frontend
+
+type FrontendMessage struct {
+	Timestamp int64
+	Content   string
+	FromUser  string // UserID
+	ChatID    string // ChatID
+	Operation OperationType
+}
+
+type OperationType int
+
+const (
+	SEND_MESSAGE   OperationType = iota
+	CREATE_CHAT    OperationType = iota
+	JOIN_CHAT      OperationType = iota
+	LEAVE_CHAT     OperationType = iota
+	INVITE_TO_CHAT OperationType = iota
+	SEND_FILE      OperationType = iota
+	SET_USERNAME   OperationType = iota
+	TEST_MESSAGE   OperationType = iota
+)
+
+type FrontendObserver interface {
+	Notify(message FrontendMessage) error
+}
+
+type Frontend interface {
+	SubscribeToFrontend(observer FrontendObserver) error
+	UnsubscribeFromFrontend(observer FrontendObserver) error
+	SendToFrontend(message FrontendMessage) error // TODO: change to FrontendMessage
+}
+
+
+__________ ./test/peer_test.go:
+
+package test
+
+import (
+	"context"
+	"fmt"
+	"testing"
+	"time"
+
+	"nhooyr.io/websocket"
+
+	"github.com/scherzma/Skunk/cmd/skunk/adapter/in/peer"
+	"github.com/scherzma/Skunk/cmd/skunk/adapter/in/tor"
+	"github.com/stretchr/testify/assert"
+)
+
+const (
+	waitTime = 1 * time.Second
+)
+
+func TestNewPeer(t *testing.T) {
+	peerInstance, err := peer.NewPeer("127.0.0.1", "8080", "", "")
+	assert.NoError(t, err)
+	assert.NotNil(t, peerInstance)
+	assert.Equal(t, peerInstance.Hostname, "127.0.0.1")
+	assert.Equal(t, peerInstance.Port, "8080")
+	assert.Equal(t, peerInstance.ProxyAddr, "")
+}
+
+func TestListen(t *testing.T) {
+	peerInstance, err := peer.NewPeer("127.0.0.1", "8080", "", "")
+	defer peerInstance.Shutdown()
+	assert.NoError(t, err)
+
+	peerInstance.Listen(nil)
+	time.Sleep(waitTime)
+
+	// Connecting to peer address should work
+	conn, _, err := websocket.Dial(context.Background(), "ws://127.0.0.1:8080", nil)
+	assert.NoError(t, err)
+	assert.NotNil(t, conn)
+
+	conn.Close(websocket.StatusNormalClosure, "test completed")
+}
+
+func TestConnect(t *testing.T) {
+	peer1, err := peer.NewPeer("127.0.0.1", "1234", "", "")
+	defer peer1.Shutdown()
+	peer2, err := peer.NewPeer("127.0.0.1", "4321", "", "")
+	defer peer2.Shutdown()
+
+	peer1.Listen(nil)
+	peer2.Listen(nil)
+	time.Sleep(waitTime)
+
+	// First connect from peer1 to peer2.
+	err = peer1.Connect(peer2.Address)
+	assert.NoError(t, err)
+
+	// Second connect from peer1 to peer2 should return an error because they have already been connected.
+	err = peer1.Connect(peer2.Address)
+	assert.Error(t, err)
+
+	// Connect from peer1 to peer1 should not work.
+	err = peer1.Connect(peer1.Address)
+	assert.Error(t, err)
+
+	// Connect from peer2 to peer1 should return an error because they have already been connected.
+	err = peer2.Connect(peer1.Address)
+	assert.Error(t, err)
+
+	// Should return an error, because "" is not a valid address
+	err = peer2.Connect("")
+	assert.Error(t, err)
+}
+
+func TestPeerSetWriteConn(t *testing.T) {
+	peer1, _ := peer.NewPeer("127.0.0.1", "1111", "", "")
+	defer peer1.Shutdown()
+	peer2, _ := peer.NewPeer("127.0.0.1", "10000", "", "")
+	defer peer2.Shutdown()
+
+	peer1.Listen(nil)
+	time.Sleep(waitTime)
+
+	err := peer2.Connect(peer1.Address)
+	time.Sleep(waitTime)
+
+	// First time setting the write conn to peer1.Address should work
+	err = peer2.SetWriteConn(peer1.Address)
+	assert.NoError(t, err)
+
+	// Setting the write conn to ones own address should not work
+	err = peer2.SetWriteConn(peer2.Address)
+	assert.Error(t, err)
+
+	// Setting the write conn to an address the peer is not connected to should not work
+	err = peer2.SetWriteConn("ws://127.0.0.1:9999")
+	assert.Error(t, err)
+
+	// Setting the write conn to "" should not work
+	err = peer2.SetWriteConn("")
+	assert.Error(t, err)
+}
+
+func TestPeerReadMessages(t *testing.T) {
+	peer1, _ := peer.NewPeer("127.0.0.1", "2222", "", "")
+	defer peer1.Shutdown()
+	peer2, _ := peer.NewPeer("127.0.0.1", "3333", "", "")
+	defer peer2.Shutdown()
+	peer3, _ := peer.NewPeer("127.0.0.1", "4444", "", "")
+	defer peer3.Shutdown()
+	peer4, _ := peer.NewPeer("127.0.0.1", "5555", "", "")
+	defer peer4.Shutdown()
+	peer5, _ := peer.NewPeer("127.0.0.1", "6666", "", "")
+	defer peer5.Shutdown()
+
+	peer1.Listen(nil)
+	time.Sleep(1 * time.Second)
+
+	address := peer1.Address
+	peer2.Connect(address)
+	peer3.Connect(address)
+	peer4.Connect(address)
+	peer5.Connect(address)
+
+	messageCh := make(chan string)
+	errorCh := make(chan error)
+	go peer1.ReadMessages(messageCh, errorCh)
+
+	peer2.SetWriteConn(address)
+	peer3.SetWriteConn(address)
+	peer4.SetWriteConn(address)
+	peer5.SetWriteConn(address)
+
+	// Reading a message from each connection should work
+	peer2.WriteMessage("Hello World!")
+	peer3.WriteMessage("This is the story of my life")
+	peer4.WriteMessage("Just do it!")
+	peer5.WriteMessage("ABCDEFGHIJKLM")
+
+	// Reading messages from the same connections again should work
+	peer2.WriteMessage("Hello Proxima Centauri!")
+	peer3.WriteMessage("Are you alright?")
+	peer4.WriteMessage("No I'm all left!")
+	peer5.WriteMessage("XYZ")
+
+	// Reading multiple messages from the same connection should work
+	peer2.WriteMessage("Recursive ...")
+	peer2.WriteMessage("Recursive ...")
+	peer2.WriteMessage("Recursive ...")
+	peer2.WriteMessage("Recursive ...")
+
+	// wait until all messages have been sent and received
+	time.Sleep(10 * time.Second)
+
+	// check that no error occured in this time
+	select {
+	case err := <-errorCh:
+		assert.NoError(t, err)
+	default:
+	}
+}
+
+func TestPeerWriteMessage(t *testing.T) {
+	peer1, _ := peer.NewPeer("127.0.0.1", "8888", "", "")
+	defer peer1.Shutdown()
+	peer2, _ := peer.NewPeer("127.0.0.1", "7890", "", "")
+	defer peer2.Shutdown()
+
+	peer1.Listen(nil)
+	time.Sleep(1 * time.Second)
+
+	peer2.Connect(peer1.Address)
+	peer2.SetWriteConn(peer1.Address)
+
+	messageCh := make(chan string)
+	errorCh := make(chan error)
+	go peer1.ReadMessages(messageCh, errorCh)
+
+	var tests = []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"numbers", "1234567890", fmt.Sprintf("From %s: 1234567890", peer2.Address)},
+		{"LETTERS", "ABCDEFGHIZ", fmt.Sprintf("From %s: ABCDEFGHIZ", peer2.Address)},
+		{"letters", "abcdefghiz", fmt.Sprintf("From %s: abcdefghiz", peer2.Address)},
+		{"special", "!?({&=$-:,", fmt.Sprintf("From %s: !?({&=$-:,", peer2.Address)},
+		{"weird", "\t\n\r¬² ", fmt.Sprintf("From %s: \t\n\r¬² ", peer2.Address)},
+		{"mixture", "abc123ABC!", fmt.Sprintf("From %s: abc123ABC!", peer2.Address)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			peer2.WriteMessage(tt.input)
+
+			select {
+			case msg := <-messageCh:
+				assert.Equal(t, msg, tt.want)
+			case err := <-errorCh:
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestPeerShutdown(t *testing.T) {
+	peerInstance, _ := peer.NewPeer("127.0.0.1", "1111", "", "")
+	defer peerInstance.Shutdown()
+
+	peerInstance.Listen(nil)
+	time.Sleep(waitTime)
+
+	peerInstance.Shutdown()
+
+	// After shutdown you shoudn't be able to connect to the peer
+	_, _, err := websocket.Dial(context.Background(), "ws://127.0.0.1:1111", nil)
+	assert.Error(t, err)
+
+	peerInstance.Listen(nil)
+	time.Sleep(waitTime)
+
+	// After executing Listen you should be able to connect to the peer again
+	conn, _, err := websocket.Dial(context.Background(), "ws://127.0.0.1:1111", nil)
+	assert.NoError(t, err)
+	assert.NotNil(t, conn)
+
+	conn.Close(websocket.StatusNormalClosure, "test completed")
+}
+
+func TestPeerHeartbeat(t *testing.T) {
+	peer1, _ := peer.NewPeer("127.0.0.1", "1111", "", "")
+	defer peer1.Shutdown()
+	peer2, _ := peer.NewPeer("127.0.0.1", "2222", "", "")
+
+	peer1.Listen(nil)
+	time.Sleep(waitTime)
+
+	peer2.Connect(peer1.Address)
+	time.Sleep(waitTime)
+
+	peer2.Shutdown()
+	time.Sleep(70 * time.Second)
+
+	// Should not work anymore, because hearbeat removed the closed connection
+	err := peer1.SetWriteConn(peer2.Address)
+	assert.Error(t, err)
+}
+
+// this test represents two peers exchanging a message over the tor network
+// because go-libtor can only start one tor process, we have to use one local installation of tor too
+func TestPeerTor(t *testing.T) {
+	// starts the non-embedded version of tor
+	conf := &tor.TorConfig{
+		DataDir:              "data-dir1",
+		SocksPort:            "9052",
+		LocalPort:            "1110",
+		RemotePort:           "1111",
+		DeleteDataDirOnClose: true,
+		UseEmbedded:          false,
+	}
+	myTorOne, err := tor.NewTor(conf)
+	assert.NoError(t, err)
+
+	err = myTorOne.StartTor()
+	assert.NoError(t, err)
+
+	onionOne, err := myTorOne.StartHiddenService()
+	assert.NoError(t, err)
+
+	peerInstanceOne, _ := peer.NewPeer(onionOne.ID+".onion", "1110", "1111", "127.0.0.1:9052")
+	defer peerInstanceOne.Shutdown()
+
+	peerInstanceOne.Listen(onionOne)
+	time.Sleep(1 * waitTime)
+
+	// starts the embedded version of tor
+	conf = &tor.TorConfig{
+		DataDir:              "data-dir2",
+		SocksPort:            "9053",
+		LocalPort:            "2221",
+		RemotePort:           "2222",
+		DeleteDataDirOnClose: true,
+		UseEmbedded:          true,
+	}
+	myTorTwo, err := tor.NewTor(conf)
+	assert.NoError(t, err)
+
+	err = myTorTwo.StartTor()
+	assert.NoError(t, err)
+
+	onionTwo, err := myTorTwo.StartHiddenService()
+	assert.NoError(t, err)
+
+	// wait for the hidden service to be published completely
+	time.Sleep(10 * time.Second)
+
+	peerInstanceTwo, _ := peer.NewPeer(onionTwo.ID+".onion", "2221", "2222", "127.0.0.1:9053")
+	defer peerInstanceTwo.Shutdown()
+
+	err = peerInstanceTwo.Connect(peerInstanceOne.Address)
+	assert.NoError(t, err)
+
+	peerInstanceTwo.SetWriteConn(peerInstanceOne.Address)
+
+	messageCh := make(chan string)
+	errorCh := make(chan error)
+
+	go peerInstanceOne.ReadMessages(messageCh, errorCh)
+
+	peerInstanceTwo.WriteMessage("Hello Dark World!")
+
+	// wait until message has been sent and received
+	time.Sleep(10 * time.Second)
+
+	// check that no error occured during this time
+	select {
+	case msg := <-messageCh:
+		t.Log(msg)
+	case err := <-errorCh:
+		assert.NoError(t, err)
+	default:
+	}
+
+	myTorOne.StopTor()
+	myTorTwo.StopTor()
+}
+
+
+__________ ./test/tor_test.go:
+
+package test
+
+import (
+	"os"
+	"testing"
+	"time"
+
+	"github.com/scherzma/Skunk/cmd/skunk/adapter/in/tor"
+	"github.com/stretchr/testify/assert"
+)
+
+// The tests always use the embedded version of go
+// since this will also be the version we'll use in production
+
+func TestStartTor(t *testing.T) {
+	conf := &tor.TorConfig{
+		SocksPort:            "9070",
+		LocalPort:            "1111",
+		RemotePort:           "2222",
+		DeleteDataDirOnClose: true,
+		UseEmbedded:          true,
+	}
+	myTor, err := tor.NewTor(conf)
+	assert.NoError(t, err)
+
+	err = myTor.StartTor()
+	assert.NoError(t, err)
+
+	err = myTor.StopTor()
+	assert.NoError(t, err)
+}
+
+func TestStartHiddenService(t *testing.T) {
+	conf := &tor.TorConfig{
+		SocksPort:            "9080",
+		LocalPort:            "3333",
+		RemotePort:           "4444",
+		DeleteDataDirOnClose: true,
+		UseEmbedded:          true,
+	}
+	myTor, err := tor.NewTor(conf)
+	assert.NoError(t, err)
+
+	err = myTor.StartTor()
+	assert.NoError(t, err)
+
+	onion, err := myTor.StartHiddenService()
+	assert.NoError(t, err)
+	if assert.NotNil(t, onion) {
+		assert.NotNil(t, onion.LocalListener)
+		assert.NotNil(t, onion.RemotePorts)
+		assert.NotNil(t, onion.ID)
+	}
+
+	err = myTor.StopTor()
+	assert.NoError(t, err)
+}
+
+func TestStopTor(t *testing.T) {
+	dataDir := "test-data-dir"
+	conf := &tor.TorConfig{
+		DataDir:              dataDir,
+		SocksPort:            "9090",
+		LocalPort:            "5555",
+		RemotePort:           "6666",
+		DeleteDataDirOnClose: true,
+		UseEmbedded:          true,
+	}
+	myTor, err := tor.NewTor(conf)
+	assert.NoError(t, err)
+
+	err = myTor.StartTor()
+	assert.NoError(t, err)
+
+	err = myTor.StopTor()
+	assert.NoError(t, err)
+
+	// the dataDir-folder shouldn't exist anymore
+	_, err = os.Stat(dataDir)
+	assert.True(t, os.IsNotExist(err))
+}
+
+func TestReusePrivateKeyTor(t *testing.T) {
+	dataDir := "reuse-data-dir"
+	// configure tor to reuse the private key
+	conf := &tor.TorConfig{
+		DataDir:              dataDir,
+		SocksPort:            "9100",
+		LocalPort:            "1234",
+		RemotePort:           "4321",
+		DeleteDataDirOnClose: false,
+		ReusePrivateKey:      true,
+		UseEmbedded:          true,
+	}
+	myTor, err := tor.NewTor(conf)
+	assert.NoError(t, err)
+
+	err = myTor.StartTor()
+	assert.NoError(t, err)
+
+	onionOne, err := myTor.StartHiddenService()
+	assert.NoError(t, err)
+
+	onionIDOne := onionOne.ID
+
+	err = myTor.StopTor()
+	assert.NoError(t, err)
+
+	time.Sleep(5 * time.Second)
+
+	// restart tor hidden service
+	// and check if onionID is the same as before
+	conf = &tor.TorConfig{
+		DataDir:              dataDir,
+		SocksPort:            "9100",
+		LocalPort:            "5678",
+		RemotePort:           "1010",
+		DeleteDataDirOnClose: true,
+		ReusePrivateKey:      true,
+		UseEmbedded:          true,
+	}
+	myTor, err = tor.NewTor(conf)
+	assert.NoError(t, err)
+
+	err = myTor.StartTor()
+	assert.NoError(t, err)
+
+	onionTwo, err := myTor.StartHiddenService()
+	assert.NoError(t, err)
+
+	onionIDTwo := onionTwo.ID
+
+	err = myTor.StopTor()
+	assert.NoError(t, err)
+
+	assert.Equal(t, onionIDOne, onionIDTwo)
+}
+
+

@@ -6,6 +6,7 @@ import (
 )
 
 type NetworkChatMessages struct {
+	chatName        string
 	chatMessagesMap map[string]network.Message
 }
 
@@ -75,4 +76,12 @@ func (ncm *NetworkChatMessages) GetMissingInternalMessageIDs(inputMessageIDs []s
 
 func (ncm *NetworkChatMessages) GetUsername() string {
 	return "todo: implement me (Username)" // TODO implement me
+}
+
+func (ncm *NetworkChatMessages) GetChatName() string {
+	return ncm.chatName
+}
+
+func (ncm *NetworkChatMessages) SetChatName(chatName string) {
+	ncm.chatName = chatName
 }
