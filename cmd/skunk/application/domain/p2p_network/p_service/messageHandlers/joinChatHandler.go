@@ -1,10 +1,19 @@
 package messageHandlers
 
-import "github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+import (
+	"github.com/scherzma/Skunk/cmd/skunk/application/domain/chat"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+)
 
-type JoinChatHandler struct{}
+// A Peer joins a chat
+type JoinChatHandler struct {
+	userChatLogic chat.ChatLogic
+}
 
 func (j *JoinChatHandler) HandleMessage(message network.Message) error {
-	//TODO implement
+
+	j.userChatLogic.PeerJoinsChat(message.FromUser, message.ChatID)
+	//TODO make the necessary changes to the chat (SQLite (with interface of course))
+
 	return nil
 }

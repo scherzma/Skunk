@@ -1,14 +1,19 @@
 package messageHandlers
 
 import (
-	"fmt"
+	"github.com/scherzma/Skunk/cmd/skunk/application/domain/chat"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
 )
 
-type LeaveChatHandler struct{}
+// A Peer leaves a chat
+type LeaveChatHandler struct {
+	userChatLogic chat.ChatLogic
+}
 
 func (l *LeaveChatHandler) HandleMessage(message network.Message) error {
-	//TODO implement
-	fmt.Println("LeaveChatHandler")
+
+	l.userChatLogic.PeerLeavesChat(message.FromUser, message.ChatID)
+	//TODO make the necessary changes to the chat (SQLite (with interface of course))
+
 	return nil
 }
