@@ -17,7 +17,7 @@ func (s *SyncRequestHandler) HandleMessage(message network.Message) error {
 	chatRepo := p_model.GetNetworkChatsInstance()
 	chatMessageRepo := chatRepo.GetChat(message.ChatID)
 
-	// Parse the content of the message
+	// Structure of the message:
 	/*
 		{
 		  "existingMessageIds": [
