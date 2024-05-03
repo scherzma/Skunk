@@ -7,8 +7,6 @@ import (
 	"testing"
 )
 
-// WIP
-
 func setup() (*p_model.NetworkChatMessages, network.Message, network.Message, network.Message, network.Message) {
 	ncm := p_model.NewNetworkChatMessages()
 
