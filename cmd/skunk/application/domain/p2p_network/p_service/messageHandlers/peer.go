@@ -29,7 +29,6 @@ func GetPeerInstance() *Peer {
 			network.SYNC_RESPONSE:  &SyncResponseHandler{},
 			network.SET_USERNAME:   &SetUsernameHandler{},
 			network.SEND_MESSAGE:   &SendMessageHandler{},
-			network.CREATE_CHAT:    &CreateChatHandler{},
 			network.INVITE_TO_CHAT: &InviteToChatHandler{},
 			network.LEAVE_CHAT:     &LeaveChatHandler{},
 			network.TEST_MESSAGE:   &TestMessageHandler{},

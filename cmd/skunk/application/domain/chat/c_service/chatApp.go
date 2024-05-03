@@ -1,14 +1,12 @@
 package c_service
 
 import (
-	"github.com/scherzma/Skunk/cmd/skunk/application/domain/chat/c_service/frontendMessageHandlers"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/frontend"
 	"sync"
 )
 
 type ChatApp struct {
 	frontends []frontend.Frontend
-	handlers  map[frontend.OperationType]frontendMessageHandlers.FrontendMessageHandler
 }
 
 var (
@@ -18,20 +16,8 @@ var (
 
 func GetChatServiceInstance() *ChatApp {
 	once.Do(func() {
-		handlers := map[frontend.OperationType]frontendMessageHandlers.FrontendMessageHandler{
-			frontend.JOIN_CHAT:      &frontendMessageHandlers.JoinChatHandler{},
-			frontend.SEND_FILE:      &frontendMessageHandlers.SendFileHandler{},
-			frontend.SET_USERNAME:   &frontendMessageHandlers.SetUsernameHandler{},
-			frontend.SEND_MESSAGE:   &frontendMessageHandlers.SendMessageHandler{},
-			frontend.CREATE_CHAT:    &frontendMessageHandlers.CreateChatHandler{},
-			frontend.INVITE_TO_CHAT: &frontendMessageHandlers.InviteToChatHandler{},
-			frontend.LEAVE_CHAT:     &frontendMessageHandlers.LeaveChatHandler{},
-			frontend.TEST_MESSAGE:   &frontendMessageHandlers.TestMessageHandler{},
-		}
-
 		chatService = &ChatApp{
 			frontends: []frontend.Frontend{},
-			handlers:  handlers,
 		}
 	})
 

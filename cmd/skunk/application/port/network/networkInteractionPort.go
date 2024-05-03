@@ -6,7 +6,6 @@ const (
 	SEND_MESSAGE   OperationType = iota
 	SYNC_REQUEST   OperationType = iota
 	SYNC_RESPONSE  OperationType = iota
-	CREATE_CHAT    OperationType = iota
 	JOIN_CHAT      OperationType = iota
 	LEAVE_CHAT     OperationType = iota
 	INVITE_TO_CHAT OperationType = iota
