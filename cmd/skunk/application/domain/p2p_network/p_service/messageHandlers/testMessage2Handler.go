@@ -5,6 +5,7 @@ import (
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
 )
 
+// TestMessageHandler2 handles the "TestMessage2" message operation.
 type TestMessageHandler2 struct {
 }
 

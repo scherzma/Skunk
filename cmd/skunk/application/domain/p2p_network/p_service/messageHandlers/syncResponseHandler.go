@@ -7,9 +7,13 @@ import (
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
 )
 
+// SyncResponseHandler handles the "SyncResponse" message operation.
 type SyncResponseHandler struct {
 }
 
+// HandleMessage processes the received "SyncResponse" message.
+// It retrieves the chat message repository, unmarshals the received messages from the message content,
+// and adds each received message to the chat message repository.
 func (s *SyncResponseHandler) HandleMessage(message network.Message) error {
 
 	chatRepo := p_model.GetNetworkChatsInstance()

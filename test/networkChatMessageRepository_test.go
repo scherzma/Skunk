@@ -7,6 +7,9 @@ import (
 	"testing"
 )
 
+// setup is a helper function that sets up the test environment.
+// It creates a new NetworkChatMessages instance and sample network messages.
+// It returns the NetworkChatMessages instance and the sample messages.
 func setup() (*p_model.NetworkChatMessages, network.Message, network.Message, network.Message, network.Message) {
 	ncm := p_model.NewNetworkChatMessages()
 
@@ -46,6 +49,7 @@ func setup() (*p_model.NetworkChatMessages, network.Message, network.Message, ne
 	return ncm, message1, message2, message3, message4
 }
 
+// TestAddMessage tests the AddMessage method of NetworkChatMessages.
 func TestAddMessage(t *testing.T) {
 	ncm, message1, _, _, _ := setup()
 
@@ -56,6 +60,7 @@ func TestAddMessage(t *testing.T) {
 	assert.NotNil(t, err)
 }
 
+// TestGetMessages tests the GetMessages method of NetworkChatMessages.
 func TestGetMessages(t *testing.T) {
 	ncm, message1, message2, _, _ := setup()
 
@@ -68,6 +73,7 @@ func TestGetMessages(t *testing.T) {
 	assert.Contains(t, messages, message2)
 }
 
+// TestGetMissingExternalMessages tests the GetMissingExternalMessages method of NetworkChatMessages.
 func TestGetMissingExternalMessages(t *testing.T) {
 	ncm, message1, message2, _, _ := setup()
 
@@ -81,6 +87,7 @@ func TestGetMissingExternalMessages(t *testing.T) {
 	assert.Equal(t, 0, len(missingExternal))
 }
 
+// TestGetMissingInternalMessages tests the GetMissingInternalMessages method of NetworkChatMessages.
 func TestGetMissingInternalMessages(t *testing.T) {
 	ncm, message1, message2, message3, message4 := setup()
 

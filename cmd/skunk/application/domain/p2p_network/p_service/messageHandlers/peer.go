@@ -1,3 +1,4 @@
+// Package messageHandlers provides message handling for the p2p network.
 package messageHandlers
 
 import (
@@ -13,6 +14,9 @@ var (
 	once         sync.Once
 )
 
+// Peer represents a node in the p2p network. It manages network connections,
+// message handlers, and security context. The Peer struct is a singleton instance
+// that is lazily initialized using the sync.Once mechanism.
 type Peer struct {
 	Chats           p_model.NetworkChats
 	handlers        map[network.OperationType]MessageHandler
@@ -29,7 +33,6 @@ func GetPeerInstance() *Peer {
 			network.SYNC_RESPONSE:  &SyncResponseHandler{},
 			network.SET_USERNAME:   &SetUsernameHandler{},
 			network.SEND_MESSAGE:   &SendMessageHandler{},
-			network.CREATE_CHAT:    &CreateChatHandler{},
 			network.INVITE_TO_CHAT: &InviteToChatHandler{},
 			network.LEAVE_CHAT:     &LeaveChatHandler{},
 			network.TEST_MESSAGE:   &TestMessageHandler{},
@@ -47,11 +50,14 @@ func GetPeerInstance() *Peer {
 	return peerInstance
 }
 
+// AddNetworkConnection adds a new network connection to the Peer instance
+// and subscribes the Peer to the network events.
 func (p *Peer) AddNetworkConnection(connection network.NetworkConnection) {
 	p.connections = append(p.connections, connection)
 	connection.SubscribeToNetwork(p)
 }
 
+// RemoveNetworkConnection removes a network connection from the Peer instance.
 func (p *Peer) RemoveNetworkConnection(connection network.NetworkConnection) {
 	for i, c := range p.connections {
 		if c == connection {
@@ -61,6 +67,10 @@ func (p *Peer) RemoveNetworkConnection(connection network.NetworkConnection) {
 	}
 }
 
+// Notify handles incoming network messages. It validates the message using the
+// security context and routes it to the appropriate message handler based on
+// the message operation type. If the message is invalid or the operation type
+// is not supported, an error is returned.
 func (p *Peer) Notify(message network.Message) error {
 	if handler, exists := p.handlers[message.Operation]; exists {
 		if !p.securityContext.ValidateIncomingMessage(message) {
@@ -72,6 +82,7 @@ func (p *Peer) Notify(message network.Message) error {
 	return errors.New("invalid message operation")
 }
 
+// SendMessageToNetworkPeer sends a message to a network peer.
 func (p *Peer) SendMessageToNetworkPeer(address string, message network.Message) error {
 
 	if !p.securityContext.ValidateOutgoingMessage(message) {
