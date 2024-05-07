@@ -14,6 +14,7 @@ type SyncResponseHandler struct {
 // HandleMessage processes the received "SyncResponse" message.
 // It retrieves the chat message repository, unmarshals the received messages from the message content,
 // and adds each received message to the chat message repository.
+// TODO: Implement a security check to ensure that the message is valid.
 func (s *SyncResponseHandler) HandleMessage(message network.Message) error {
 
 	chatRepo := p_model.GetNetworkChatsInstance()
