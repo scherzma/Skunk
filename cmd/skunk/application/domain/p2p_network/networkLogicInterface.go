@@ -1,7 +1,6 @@
 package p2p_network
 
 type NetworkLogic interface {
-	// TODO: Implement
 	CreateChat(chatId string, chatName string) error
 	JoinChat(chatId string) error
 	LeaveChat(chatId string) error
