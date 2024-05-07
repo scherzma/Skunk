@@ -8,7 +8,6 @@ import (
 
 // NetworkMockAdapter is a mock adapter for the network
 // It implements the NetworkConnection interface
-
 var (
 	mockConnection *MockConnection // singleton for testing purposes
 	once           sync.Once
