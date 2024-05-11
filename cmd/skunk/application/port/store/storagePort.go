@@ -28,16 +28,6 @@ type NetworkMessageStoragePort interface {
 	RetrieveMessage(messageId string) (network.Message, error)
 }
 
-type MessageType int
-
-const (
-	MESSAGE        MessageType = iota
-	File           MessageType = iota
-	UserJoined     MessageType = iota
-	UserLeft       MessageType = iota
-	UserWasInvited MessageType = iota
-)
-
 type ChatMessage struct {
 	Username  string
 	Content   string

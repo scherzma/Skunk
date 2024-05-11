@@ -11,7 +11,8 @@ create table Peers
     peer_id    integer       not null
         constraint Peers_pk
             primary key autoincrement,
-    public_key varchar(1024) not null
+    public_key varchar(1024) not null,
+    address    varchar(1024) not null
 );
 
 create table ChatMembers

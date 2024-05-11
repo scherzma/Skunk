@@ -55,6 +55,7 @@ func (p *Peer) RemoveNetworkConnection(connection network.NetworkConnection) {
 	for i, c := range p.connections {
 		if c == connection {
 			p.connections = append(p.connections[:i], p.connections[i+1:]...)
+			connection.UnsubscribeFromNetwork(p)
 			break
 		}
 	}

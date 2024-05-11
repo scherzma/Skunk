@@ -16,12 +16,15 @@ const (
 )
 
 type Message struct {
-	Id        string
-	Timestamp int64
-	Content   string
-	FromUser  string // UserID
-	ChatID    string // ChatID
-	Operation OperationType
+	Id              string
+	Timestamp       int64
+	Content         string
+	SenderID        string
+	ReceiverID      string
+	SenderAddress   string
+	ReceiverAddress string
+	ChatID          string
+	Operation       OperationType
 }
 
 type NetworkObserver interface {
