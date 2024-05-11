@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-    "github.com/pkg/errors"
+	"github.com/pkg/errors"
 	"golang.org/x/net/proxy"
 )
 
@@ -208,11 +208,11 @@ func (p *Peer) readMessage(conn *websocket.Conn, address string) (string, error)
 	_, messageBytes, err := conn.ReadMessage()
 	p.readMutex.Unlock()
 	if err != nil {
-        // check if error is because connection is closed
-        // => gets handeld as peer offline
+		// check if error is because connection is closed
+		// => gets handeld as peer offline
 		if p.checkConnIsClosed(address, err) {
 			return "", err
-        // every other error gets ignored
+			// every other error gets ignored
 		} else {
 			return "", nil
 		}
@@ -233,8 +233,8 @@ func (p *Peer) ReadMessages(messageCh chan<- string, errorCh chan<- error) {
 					go func() {
 						msg, err := p.readMessage(conn, addr)
 						if err != nil {
-                            // encode address as error so that we know which peer is offline
-                            errOffline := errors.New(addr)
+							// encode address as error so that we know which peer is offline
+							errOffline := errors.New(addr)
 							errorCh <- errOffline
 						} else if msg != "" { // "" can happen when an error occurs when reading from
 							// the connection but the error is not due to the
@@ -246,8 +246,8 @@ func (p *Peer) ReadMessages(messageCh chan<- string, errorCh chan<- error) {
 				p.mapRWLock.RUnlock()
 			case <-p.quitch:
 				ticker.Stop()
-                close(messageCh)
-                close(errorCh)
+				close(messageCh)
+				close(errorCh)
 				return
 			}
 		}

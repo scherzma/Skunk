@@ -13,21 +13,21 @@ const (
 	INVITE_TO_CHAT OperationType = iota
 	SEND_FILE      OperationType = iota
 	SET_USERNAME   OperationType = iota
-    USER_OFFLINE   OperationType = iota
+	USER_OFFLINE   OperationType = iota
 	TEST_MESSAGE   OperationType = iota
 	TEST_MESSAGE_2 OperationType = iota
 )
 
 // Message represents a network message exchanged between peers.
 type Message struct {
-	Id        string
-	Timestamp int64
-	Content   string
-	FromUser  string
-    SenderAddress string
-    ReceiverAddress string
-	ChatID    string
-	Operation OperationType
+	Id              string
+	Timestamp       int64
+	Content         string
+	FromUser        string
+	SenderAddress   string
+	ReceiverAddress string
+	ChatID          string
+	Operation       OperationType
 }
 
 // NetworkObserver is an interface that defines the contract for observing network events.
@@ -40,6 +40,6 @@ type NetworkObserver interface {
 // It provides methods for subscribing/unsubscribing observers and sending messages to network peers.
 type NetworkConnection interface {
 	SubscribeToNetwork(observer NetworkObserver) error
-	UnsubscribeFromNetwork(observer NetworkObserver) error
+	UnsubscribeFromNetwork() error
 	SendMessageToNetworkPeer(address string, message Message) error
 }

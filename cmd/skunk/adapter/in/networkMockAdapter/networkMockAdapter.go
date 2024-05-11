@@ -14,7 +14,7 @@ var (
 )
 
 type MockConnection struct {
-	subscribers []network.NetworkObserver
+	subscriber network.NetworkObserver
 }
 
 func GetMockConnection() *MockConnection {
@@ -26,18 +26,21 @@ func GetMockConnection() *MockConnection {
 
 // SubscribeToNetwork is a mock function for the network
 func (m *MockConnection) SubscribeToNetwork(observer network.NetworkObserver) error {
-	m.subscribers = append(m.subscribers, observer)
+	if m.subscriber != nil {
+		return fmt.Errorf("network adapter is already connected to observer: %v", observer)
+	}
+
+	m.subscriber = observer
 	return nil
 }
 
 // UnsubscribeFromNetwork is a mock function for the network
-func (m *MockConnection) UnsubscribeFromNetwork(observer network.NetworkObserver) error {
-	for i, sub := range m.subscribers {
-		if sub == observer {
-			m.subscribers = append(m.subscribers[:i], m.subscribers[i+1:]...)
-			break
-		}
+func (m *MockConnection) UnsubscribeFromNetwork() error {
+	if m.subscriber == nil {
+		return fmt.Errorf("can't unsubscribe from nil")
 	}
+
+	m.subscriber = nil
 	return nil
 }
 
@@ -50,8 +53,6 @@ func (m *MockConnection) SendMessageToNetworkPeer(address string, message networ
 
 // SendMockNetworkMessageToSubscribers is a mock function for the network
 func (m *MockConnection) SendMockNetworkMessageToSubscribers(message network.Message) error {
-	for _, sub := range m.subscribers {
-		sub.Notify(message)
-	}
+	m.subscriber.Notify(message)
 	return nil
 }

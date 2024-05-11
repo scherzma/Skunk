@@ -75,5 +75,5 @@ func TestSyncRequestHandler(t *testing.T) {
 
 	mockNetworkConnection.SendMockNetworkMessageToSubscribers(testSyncMessage)
 
-    // TODO: Improve test
+	// TODO: Improve test
 }
