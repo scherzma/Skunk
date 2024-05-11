@@ -28,7 +28,31 @@ create table ChatMembers
     chat_id        varchar(1024) not null
         constraint ChatMembers_Chats_chat_id_fk
             references Chats
-            on update cascade
+            on update cascade,
+    username       varchar(50)
+);
+
+create table Messages
+(
+    message_id       varchar(1024) not null
+        constraint Messages_pk
+            primary key,
+    content          text,
+    date             datetime      not null,
+    operation        integer       not null,
+    sender_peer_id   varchar(1024) not null
+        constraint Messages_Peers_peer_id_fk
+            references Peers
+            on update cascade,
+    chat_id          varchar(1024) not null
+        constraint Messages_Chats_chat_id_fk
+            references Chats
+            on update cascade,
+    receiver_peer_id varchar(1024) not null
+        constraint Messages_Peers_peer_id_fk_2
+            references Peers,
+    sender_address   varchar(1024) not null,
+    receiver_address varchar(1024) not null
 );
 
 create table Invitations
@@ -36,36 +60,21 @@ create table Invitations
     invitation_id     integer       not null
         constraint Invitations_pk
             primary key autoincrement,
-    sender_peer_id    varchar(1024) not null
-        constraint Invitations_Peers_peer_id_fk
-            references Peers
-            on update cascade,
-    recipient_peer_id varchar(1024) not null
-        constraint Invitations_Peers_peer_id_fk_2
-            references Peers
-            on update cascade,
-    chat_id           varchar(1024) not null
-        constraint Invitations_Chats_chat_id_fk
-            references Chats
-            on update cascade,
-    date              datetime      not null,
-    invitation_status integer       not null
+    invitation_status integer       not null,
+    message_id        varchar(1024) not null
+        constraint Invitations_Messages_message_id_fk
+            references Messages
 );
 
-create table Messages
+create table PeersInInvitedChat
 (
-    message_id     integer       not null
-        constraint Messages_pk
+    public_key      varchar(1024) not null,
+    invited_peer_id integer       not null
+        constraint PeersInInvitedChat_pk
             primary key autoincrement,
-    content        text,
-    date           datetime      not null,
-    operation      integer       not null,
-    sender_peer_id varchar(1024) not null
-        constraint Messages_Peers_peer_id_fk
-            references Peers
-            on update cascade,
-    chat_id        varchar(1024) not null
-        constraint Messages_Chats_chat_id_fk
-            references Chats
-            on update cascade
+    address         varchar(1024) not null,
+    invitation_id   integer       not null
+        constraint PeersInInvitedChat_Invitations_invitation_id_fk
+            references Invitations
 );
+
