@@ -47,7 +47,7 @@ type User struct {
 
 type DisplayStoragePort interface {
 	GetChats() []Chat
-	GetUsername(peerId string) string
+	GetUsername(peerId string, chatId string) string
 	GetUsersInChat(chatId string) []User
 	GetPeers() []string
 	GetChatMessages(chatId string) []ChatMessage
