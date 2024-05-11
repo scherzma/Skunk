@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+    "github.com/pkg/errors"
 	"golang.org/x/net/proxy"
 )
 
@@ -146,7 +147,7 @@ func (p *Peer) SetWriteConn(address string) error {
 		return fmt.Errorf("peer is not connected to any address")
 	}
 
-	if !p.isConnectedTo(address) {
+	if !p.IsConnectedTo(address) {
 		return fmt.Errorf("peer is not connected to address: %s", address)
 	}
 
@@ -167,7 +168,7 @@ func (p *Peer) Connect(address string) error {
 		return fmt.Errorf("can't connect to own address: %s", p.Address)
 	}
 
-	if p.isConnectedTo(address) {
+	if p.IsConnectedTo(address) {
 		return fmt.Errorf("peer is already connected to address: %s", address)
 	}
 
@@ -207,8 +208,11 @@ func (p *Peer) readMessage(conn *websocket.Conn, address string) (string, error)
 	_, messageBytes, err := conn.ReadMessage()
 	p.readMutex.Unlock()
 	if err != nil {
+        // check if error is because connection is closed
+        // => gets handeld as peer offline
 		if p.checkConnIsClosed(address, err) {
 			return "", err
+        // every other error gets ignored
 		} else {
 			return "", nil
 		}
@@ -229,7 +233,9 @@ func (p *Peer) ReadMessages(messageCh chan<- string, errorCh chan<- error) {
 					go func() {
 						msg, err := p.readMessage(conn, addr)
 						if err != nil {
-							errorCh <- err
+                            // encode address as error so that we know which peer is offline
+                            errOffline := errors.New(addr)
+							errorCh <- errOffline
 						} else if msg != "" { // "" can happen when an error occurs when reading from
 							// the connection but the error is not due to the
 							// connection being closed.
@@ -240,6 +246,8 @@ func (p *Peer) ReadMessages(messageCh chan<- string, errorCh chan<- error) {
 				p.mapRWLock.RUnlock()
 			case <-p.quitch:
 				ticker.Stop()
+                close(messageCh)
+                close(errorCh)
 				return
 			}
 		}
@@ -281,6 +289,14 @@ func (p *Peer) Shutdown() {
 	p.writeConn = nil
 
 	close(p.quitch) // Signals the shutdown listener to initiate server shutdown.
+}
+
+// IsConnectedTo checks if there is an existing websocket connection to the specified address.
+func (p *Peer) IsConnectedTo(address string) bool {
+	p.mapRWLock.RLock()
+	_, ok := p.readConns[address]
+	p.mapRWLock.RUnlock()
+	return ok
 }
 
 // handler is the HTTP request handler for upgrading incoming requests to websocket connections.
@@ -349,14 +365,6 @@ func (p *Peer) sendHeartbeatToAll() {
 			}
 		}
 	}
-}
-
-// isConnectedTo checks if there is an existing websocket connection to the specified address.
-func (p *Peer) isConnectedTo(address string) bool {
-	p.mapRWLock.RLock()
-	_, ok := p.readConns[address]
-	p.mapRWLock.RUnlock()
-	return ok
 }
 
 // checkConnIsClosed evaluates if an error during a read or write operation was due to the connection being closed.

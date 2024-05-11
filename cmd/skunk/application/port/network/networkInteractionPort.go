@@ -13,6 +13,7 @@ const (
 	INVITE_TO_CHAT OperationType = iota
 	SEND_FILE      OperationType = iota
 	SET_USERNAME   OperationType = iota
+    USER_OFFLINE   OperationType = iota
 	TEST_MESSAGE   OperationType = iota
 	TEST_MESSAGE_2 OperationType = iota
 )
@@ -23,6 +24,8 @@ type Message struct {
 	Timestamp int64
 	Content   string
 	FromUser  string
+    SenderAddress string
+    ReceiverAddress string
 	ChatID    string
 	Operation OperationType
 }
