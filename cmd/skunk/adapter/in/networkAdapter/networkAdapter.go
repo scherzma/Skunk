@@ -3,20 +3,21 @@ package networkAdapter
 import (
 	"encoding/json"
 	"fmt"
+	"sync"
 
-	"github.com/cretz/bine/tor"
+	cretztor "github.com/cretz/bine/tor"
 
 	"github.com/scherzma/Skunk/cmd/skunk/adapter/in/peer"
 	"github.com/scherzma/Skunk/cmd/skunk/adapter/in/tor"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
-	"github.com/scherzma/Skunk/cmd/skunk/util/timestamp"
-	"github.com/scherzma/Skunk/cmd/skunk/util/uuid"
+	"github.com/scherzma/Skunk/cmd/skunk/util"
 )
 
 const (
 	SocksPort            = "9055"
 	LocalPort            = "1111"
 	RemotePort           = "2222"
+	ReusePrivateKey      = true
 	DeleteDataDirOnClose = false
 	UseEmbedded          = true
 )
@@ -27,47 +28,47 @@ var (
 )
 
 type NetworkAdapter struct {
-	subscriber *network.NetworkObserver
+	subscriber network.NetworkObserver
 	peer       *peer.Peer
 	tor        *tor.Tor
 }
 
 func NewAdapter() *NetworkAdapter {
 	once.Do(func() {
-		networkAdapter := NetworkAdapter{}
+		networkAdapter = &NetworkAdapter{}
 	})
 
-	return &networkAdapter
+	return networkAdapter
 }
 
-func (n *NetworkAdapter) SubscribeToNetwork(observer *network.NetworkObserver) error {
+func (n *NetworkAdapter) SubscribeToNetwork(observer network.NetworkObserver) error {
 	if n.subscriber == observer {
 		return fmt.Errorf("network adapter is already connected to observer: %v", observer)
 	}
 
-    if n.peer != nil {
-        return fmt.Errof("peer network is already running")
-    }
+	if n.peer != nil {
+		return fmt.Errorf("peer network is already running")
+	}
 
-    if n.tor != nil {
-        return fmt.Errof("tor network is already running")
-    }
+	if n.tor != nil {
+		return fmt.Errorf("tor network is already running")
+	}
 
-    torInstance, onionService, err := startTor()
-    if err != nil {
-        return err
-    }
+	torInstance, onionService, err := startTor()
+	if err != nil {
+		return err
+	}
 
-    peerInstance, err := startPeer(onionService)
-    if err != nil {
-        return err
-    }
+	peerInstance, err := startPeer(onionService)
+	if err != nil {
+		return err
+	}
 
-    go readNetworkMessages()
+	go n.readNetworkMessages()
 
-    n.subscriber = observer
-    n.peer = peerInstance
-    n.tor = torInstance
+	n.subscriber = observer
+	n.peer = peerInstance
+	n.tor = torInstance
 	return nil
 }
 
@@ -76,16 +77,16 @@ func (n *NetworkAdapter) UnsubscribeFromNetwork() error {
 		return fmt.Errorf("can't unsubscribe from nil")
 	}
 
-    if n.peer == nil {
-        return fmt.Errof("peer network is nil")
-    }
+	if n.peer == nil {
+		return fmt.Errorf("peer network is nil")
+	}
 
-    if n.tor == nil {
-        return fmt.Errof("tor network is nil")
-    }
+	if n.tor == nil {
+		return fmt.Errorf("tor network is nil")
+	}
 
-	stopTor()
-	stopPeer()
+	stopTor(n.tor)
+	stopPeer(n.peer)
 
 	n.subscriber = nil
 	n.peer = nil
@@ -93,32 +94,37 @@ func (n *NetworkAdapter) UnsubscribeFromNetwork() error {
 	return nil
 }
 
-func (n *NetworkAdapter) SendMessageToNetworkPeer(address string, message *network.Message) error {
+func (n *NetworkAdapter) SendMessageToNetworkPeer(address string, message network.Message) error {
 	jsonMessage, err := json.Marshal(message)
 	if err != nil {
 		return err
 	}
 
-	if !n.peer.IsConnectedTo(address) {
-		err = n.peer.Connect(address)
-        if err != nil {
-            // message subscriber that the peer is offline
-            message := network.Message {
-                Id: uuid.UUID(),
-                Timestamp: timestamp.CurrentTimeMillis(),
-                Content: "",
-                FromUser: "",
-                SenderAddress: n.peer.Address,
-                ReceiverAddress: address,
-                ChatID: "",
-                Operation: network.USER_OFFLINE
-            }
-            n.SendNetworkMessageToSubscriber(message)
-            return nil
-        }
+	if address == "" {
+		address = n.peer.Address
 	}
 
-	err = n.peer.SetWriteConn(address) if err != nil {
+	if !n.peer.IsConnectedTo(address) {
+		err = n.peer.Connect(address)
+		if err != nil {
+			// message subscriber that the peer is offline
+			message := network.Message{
+				Id:              util.UUID(),
+				Timestamp:       util.CurrentTimeMillis(),
+				Content:         "",
+				FromUser:        "",
+				SenderAddress:   n.peer.Address,
+				ReceiverAddress: address,
+				ChatID:          "",
+				Operation:       network.USER_OFFLINE,
+			}
+			n.SendNetworkMessageToSubscriber(message)
+			return nil
+		}
+	}
+
+	err = n.peer.SetWriteConn(address)
+	if err != nil {
 		return err
 	}
 
@@ -126,49 +132,14 @@ func (n *NetworkAdapter) SendMessageToNetworkPeer(address string, message *netwo
 	if err != nil {
 		return err
 	}
+	return nil
 }
 
 func (n *NetworkAdapter) SendNetworkMessageToSubscriber(message network.Message) {
 	n.subscriber.Notify(message)
 }
 
-func startTor() (*tor.Tor, *tor.OnionService, error) {
-	conf := tor.TorConfig{
-		SocksPort:            SocksPort,
-		LocalPort:            LocalPort,
-		RemotePort:           RemotePort,
-		DeleteDataDirOnClose: DeleteDataDirOnClose,
-		UseEmbedded:          UseEmbedded,
-	}
-
-	torInstance, err := tor.NewTor(&conf)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	err = torInstance.StartTor()
-	if err != nil {
-		return nil, nil, err
-	}
-
-	onionService, err := torInstance.StartHiddenService()
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return &torInstance, &onionService, nil
-}
-
-func startPeer(onionService *tor.OnionService) (*peer.Peer, error) {
-	peerInstance, err := peer.NewPeer(onionService.ID+".onion", LocalPort, RemotePort, "127.0.0.1:"+SocksPort)
-	if err != nil {
-		return nil, err
-	}
-
-	return &peerInstance, err
-}
-
-func readNetworkMessages() {
+func (n *NetworkAdapter) readNetworkMessages() {
 	messageCh := make(chan string)
 	errorCh := make(chan error)
 
@@ -190,26 +161,63 @@ func readNetworkMessages() {
 			if !ok {
 				return
 			}
-            // message subscriber that a peer is offline
-            message := network.Message {
-                Id: uuid.UUID(),
-                Timestamp: timestamp.CurrentTimeMillis(),
-                Content: "",
-                FromUser: "",
-                SenderAddress: n.peer.Address,
-                ReceiverAddress: err.Error(),   // address is encoded in err
-                ChatID: "",
-                Operation: network.USER_OFFLINE
-            }
+			// message subscriber that a peer is offline
+			message := network.Message{
+				Id:              util.UUID(),
+				Timestamp:       util.CurrentTimeMillis(),
+				Content:         "",
+				FromUser:        "",
+				SenderAddress:   n.peer.Address,
+				ReceiverAddress: err.Error(), // address is encoded in err
+				ChatID:          "",
+				Operation:       network.USER_OFFLINE,
+			}
 			n.SendNetworkMessageToSubscriber(message)
 		}
 	}
+}
+
+func startTor() (*tor.Tor, *cretztor.OnionService, error) {
+	conf := tor.TorConfig{
+		SocksPort:            SocksPort,
+		LocalPort:            LocalPort,
+		RemotePort:           RemotePort,
+		ReusePrivateKey:      ReusePrivateKey,
+		DeleteDataDirOnClose: DeleteDataDirOnClose,
+		UseEmbedded:          UseEmbedded,
+	}
+
+	torInstance, err := tor.NewTor(&conf)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	err = torInstance.StartTor()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	onionService, err := torInstance.StartHiddenService()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return torInstance, onionService, nil
+}
+
+func startPeer(onionService *cretztor.OnionService) (*peer.Peer, error) {
+	peerInstance, err := peer.NewPeer(onionService.ID+".onion", LocalPort, RemotePort, "127.0.0.1:"+SocksPort)
+	if err != nil {
+		return nil, err
+	}
+
+	return peerInstance, err
 }
 
 func stopTor(torInstance *tor.Tor) {
 	torInstance.StopTor()
 }
 
-func stopPeer(peerInstance *tor.Tor) {
+func stopPeer(peerInstance *peer.Peer) {
 	peerInstance.Shutdown()
 }

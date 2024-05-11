@@ -50,6 +50,6 @@ func TestSubscribeAndUnsubscribeToNetwork(t *testing.T) {
 	err := mockConnection.SubscribeToNetwork(peer)
 	assert.NoError(t, err, "SubscribeToNetwork() failed, expected nil, got error")
 
-	err = mockConnection.UnsubscribeFromNetwork(peer)
+	err = mockConnection.UnsubscribeFromNetwork()
 	assert.NoError(t, err, "UnsubscribeFromNetwork() failed, expected nil, got error")
 }
