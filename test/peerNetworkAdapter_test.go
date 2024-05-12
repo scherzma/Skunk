@@ -35,13 +35,18 @@ func TestNetworkAdapter(t *testing.T) {
         DeleteDataDirOnClose: false,
         UseEmbedded: false,
     }
+
     torInstance, _ := tor.NewTor(conf)
     torInstance.StartTor()
-    defer torInstance.StopTor()
     onion, _ := torInstance.StartHiddenService()
+
+    time.Sleep(10 * time.Second)
 
     peerNetworkInstance, _ := peer.NewPeer(onion.ID+".onion", "1110", "2220", "127.0.0.1:9052")
     defer peerNetworkInstance.Shutdown()
+
+    peerNetworkInstance.Listen(onion)
+    time.Sleep(1 * time.Second)
 
     messageCh := make(chan string)
     errorCh := make(chan error)
@@ -52,6 +57,7 @@ func TestNetworkAdapter(t *testing.T) {
 	assert.NoError(t, err)
 
     time.Sleep(10 * time.Second)
+
     select {
         case msg := <-messageCh:
             t.Log(msg)
@@ -60,6 +66,7 @@ func TestNetworkAdapter(t *testing.T) {
         default:
     }
 
+    torInstance.StopTor()
 	peerInstance.RemoveNetworkConnection(networkConnection)
 }
 
