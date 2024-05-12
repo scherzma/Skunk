@@ -15,15 +15,13 @@ import (
 )
 
 const (
-	MaxConns          = 64                           // MaxConns defines the maximum number of concurrent websocket connections allowed.
-	connWait          = 1 * time.Minute              // connWait specifies the timeout for connecting to another peer.
-	writeWait         = 20 * time.Second             // writeWait specifies the timeout for writing to another peer. has to be high when running over tor
-	shutdownWait      = 0 * time.Second              // shutdownWait specifies the wait time for shutting down the HTTP server. (optional for later)
-	readRateInterval  = 2 * time.Second              // readRateInterval specifies the rate at which it will it is tried to read a message from every connection.
-	readWait          = (readRateInterval * 9) / 10  // readWait specifies the time for trying to read a message from a connection. Needs to be less than readRateInterval
-	heartbeatInterval = 1 * time.Minute              // heartbeatInterval specifies the time interval between consecutive heartbeat messages. when running over tor this should be high
-	pongWait          = (heartbeatInterval * 9) / 10 // pongWait specifies the time a ping response can need before the connection gets classified as closed during an heartbeat. Needs to be less than heartbeatInteval
-	maxMessageSize    = 512                          // maxMessageSize defines the maximum message size allowed from peer. (bytes)
+	MaxConns         = 64                          // MaxConns defines the maximum number of concurrent websocket connections allowed.
+	connWait         = 1 * time.Minute             // connWait specifies the timeout for connecting to another peer.
+	writeWait        = 20 * time.Second            // writeWait specifies the timeout for writing to another peer. has to be high when running over tor
+	shutdownWait     = 0 * time.Second             // shutdownWait specifies the wait time for shutting down the HTTP server. (optional for later)
+	readRateInterval = 2 * time.Second             // readRateInterval specifies the rate at which it will it is tried to read a message from every connection.
+	readWait         = (readRateInterval * 9) / 10 // readWait specifies the time for trying to read a message from a connection. Needs to be less than readRateInterval
+	maxMessageSize   = 512                         // maxMessageSize defines the maximum message size allowed from peer. (bytes)
 )
 
 var upgrader = websocket.Upgrader{
@@ -70,9 +68,6 @@ func NewPeer(hostname string, localPort string, remotePort string, proxyAddr str
 			Transport: transport,
 		},
 	}
-
-	// starts the heartbeat mechanism
-	p.startHeartbeat()
 
 	return &p, nil
 }
@@ -246,8 +241,8 @@ func (p *Peer) ReadMessages(messageCh chan<- string, errorCh chan<- error) {
 				p.mapRWLock.RUnlock()
 			case <-p.quitch:
 				ticker.Stop()
-				close(messageCh)
-				close(errorCh)
+				// close(messageCh)
+				// close(errorCh)
 				return
 			}
 		}
@@ -325,46 +320,6 @@ func (p *Peer) handleNewConnection(conn *websocket.Conn, address string) error {
 	p.readConns[address] = conn
 	p.mapRWLock.Unlock()
 	return nil
-}
-
-// StartHearbeat initiates a periodic hearbeat mechanism for all active connections.
-// It sends a ping message at regular intervals to each connection to ensure they are alive.
-func (p *Peer) startHeartbeat() {
-	ticker := time.NewTicker(heartbeatInterval)
-	go func() {
-		for {
-			select {
-			case <-ticker.C: // On each tick, send heartbeat to all connections.
-				p.sendHeartbeatToAll()
-			case <-p.quitch:
-				ticker.Stop()
-				return
-			}
-		}
-	}()
-}
-
-// sendHearbeatToAll sends a hearbeat signal (ping) to each active connection.
-// If a connection fails to respond to the heartbeat, it removes the connection.
-func (p *Peer) sendHeartbeatToAll() {
-	//p.writeMutex.Lock()
-	//defer p.writeMutex.Unlock()
-
-	// THIS IS NOT GOOD
-	for address, conn := range p.readConns {
-		if conn == nil {
-			p.mapRWLock.Lock()
-			delete(p.readConns, address)
-			p.mapRWLock.Unlock()
-		} else {
-			conn.SetWriteDeadline(time.Now().Add(pongWait))
-			if err := conn.WriteMessage(websocket.PingMessage, []byte{}); err != nil {
-				p.mapRWLock.Lock()
-				delete(p.readConns, address) // Optionally, we could try to reinitialize the connection here.
-				p.mapRWLock.Unlock()
-			}
-		}
-	}
 }
 
 // checkConnIsClosed evaluates if an error during a read or write operation was due to the connection being closed.
