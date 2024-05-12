@@ -14,6 +14,7 @@ const (
 	SEND_FILE      OperationType = iota
 	SET_USERNAME   OperationType = iota
 	USER_OFFLINE   OperationType = iota
+	NETWORK_ONLINE OperationType = iota
 	TEST_MESSAGE   OperationType = iota
 	TEST_MESSAGE_2 OperationType = iota
 )
