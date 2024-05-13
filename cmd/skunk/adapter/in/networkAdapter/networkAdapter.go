@@ -43,8 +43,6 @@ func NewAdapter() *NetworkAdapter {
 	return networkAdapter
 }
 
-// SubscribeToNetwork configures and starts network services, subscribing an observer to network events
-func (n *NetworkAdapter) SubscribeToNetwork(observer network.NetworkObserver) error {
 	if n.subscriber == observer {
 		return fmt.Errorf("network adapter is already connected to observer: %v", observer)
 	}
