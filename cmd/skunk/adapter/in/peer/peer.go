@@ -220,6 +220,8 @@ func (p *Peer) readMessage(conn *websocket.Conn, address string) (string, error)
 func (p *Peer) ReadMessages(messageCh chan<- string, errorCh chan<- error) {
 	ticker := time.NewTicker(readRateInterval)
 	go func() {
+        defer close(messageCh)
+        defer close(errorCh)
 		for {
 			select {
 			case <-ticker.C:
@@ -241,8 +243,6 @@ func (p *Peer) ReadMessages(messageCh chan<- string, errorCh chan<- error) {
 				p.mapRWLock.RUnlock()
 			case <-p.quitch:
 				ticker.Stop()
-				// close(messageCh)
-				// close(errorCh)
 				return
 			}
 		}
@@ -256,12 +256,9 @@ func (p *Peer) WriteMessage(message string) error {
 		return fmt.Errorf("no write connection is set")
 	}
 
-	// Append From p.Address: to message so that the other peers knows which peer sent him the message.
-	fullMessage := fmt.Sprintf("From %s: %s", p.Address, message)
-
 	p.writeConn.SetWriteDeadline(time.Now().Add(writeWait))
 	p.writeMutex.Lock()
-	err := p.writeConn.WriteMessage(websocket.TextMessage, []byte(fullMessage))
+	err := p.writeConn.WriteMessage(websocket.TextMessage, []byte(message))
 	p.writeMutex.Unlock()
 	if err != nil {
 		p.checkConnIsClosed(p.writeConn.RemoteAddr().String(), err)

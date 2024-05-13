@@ -1,7 +1,6 @@
 package networkAdapter
 
 import (
-	"encoding/json"
 	"fmt"
 	"sync"
 
@@ -112,14 +111,9 @@ func (n *NetworkAdapter) UnsubscribeFromNetwork() error {
 
 // SendMessageToNetworkPeer sends a message to a specified network peer
 func (n *NetworkAdapter) SendMessageToNetworkPeer(address string, message network.Message) error {
-	jsonMessage, err := json.Marshal(message)
-	if err != nil {
-		return err
-	}
-
     // connect to peer if not already connected
 	if !n.peer.IsConnectedTo(address) {
-		err = n.peer.Connect(address)
+		err := n.peer.Connect(address)
         // if there is any error, we treat it as if the peer is offline
 		if err != nil {
 			// message subscriber that the peer is offline
@@ -138,12 +132,17 @@ func (n *NetworkAdapter) SendMessageToNetworkPeer(address string, message networ
 		}
 	}
 
-	err = n.peer.SetWriteConn(address)
+	err := n.peer.SetWriteConn(address)
 	if err != nil {
 		return err
 	}
 
-	err = n.peer.WriteMessage(string(jsonMessage))
+	jsonMessage, err := util.JsonEncode(message)
+	if err != nil {
+		return err
+	}
+
+	err = n.peer.WriteMessage(jsonMessage)
 	if err != nil {
 		return err
 	}
@@ -171,10 +170,11 @@ func (n *NetworkAdapter) readNetworkMessages() {
 			if !ok {
 				return
 			}
-			message := network.Message{}
-			json.Unmarshal([]byte(msg), &message)
-
-			n.SendNetworkMessageToSubscriber(message)
+            if msgInterface, err := util.JsonDecode(msg); err == nil {
+                if message, ok := msgInterface.(network.Message); ok {
+                    n.SendNetworkMessageToSubscriber(message)
+                }
+            }
 		case err, ok := <-errorCh:
 			if !ok {
 				return
