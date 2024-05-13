@@ -19,6 +19,7 @@ var (
 // that is lazily initialized using the sync.Once mechanism.
 type Peer struct {
 	Chats           p_model.NetworkChats
+    Address         string
 	handlers        map[network.OperationType]MessageHandler
 	connections     []network.NetworkConnection
 	securityContext p_service.SecurityContext
@@ -27,14 +28,17 @@ type Peer struct {
 func GetPeerInstance() *Peer {
 	once.Do(func() {
 		handlers := map[network.OperationType]MessageHandler{
-			network.JOIN_CHAT:      &JoinChatHandler{},
-			network.SEND_FILE:      &SendFileHandler{},
+			network.SEND_MESSAGE:   &SendMessageHandler{},
 			network.SYNC_REQUEST:   &SyncRequestHandler{},
 			network.SYNC_RESPONSE:  &SyncResponseHandler{},
-			network.SET_USERNAME:   &SetUsernameHandler{},
-			network.SEND_MESSAGE:   &SendMessageHandler{},
-			network.INVITE_TO_CHAT: &InviteToChatHandler{},
+            // CREATE_CHAT missing
+			network.JOIN_CHAT:      &JoinChatHandler{},
 			network.LEAVE_CHAT:     &LeaveChatHandler{},
+			network.INVITE_TO_CHAT: &InviteToChatHandler{},
+			network.SEND_FILE:      &SendFileHandler{},
+			network.SET_USERNAME:   &SetUsernameHandler{},
+            // USER_OFFLINE missing
+            network.NETWORK_ONLINE: &NetworkOnlineHandler{},
 			network.TEST_MESSAGE:   &TestMessageHandler{},
 			network.TEST_MESSAGE_2: &TestMessageHandler2{},
 		}
