@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestNetworkAdapter(t *testing.T) {
+func TestNetworkAdapterSendMessage(t *testing.T) {
 	testMessage := network.Message{
 		Id:        util.UUID(),
 		Timestamp: util.CurrentTimeMillis(),
@@ -22,6 +22,7 @@ func TestNetworkAdapter(t *testing.T) {
 		ChatID:    "1",
 		Operation: network.TEST_MESSAGE,
 	}
+    testMessageJson, err := util.JsonEncode(testMessage)
 
 	peerInstance := messageHandlers.GetPeerInstance()
 	networkConnection := networkAdapter.NewAdapter()
@@ -53,7 +54,7 @@ func TestNetworkAdapter(t *testing.T) {
 
     go peerNetworkInstance.ReadMessages(messageCh, errorCh)
 
-	err := peerInstance.SendMessageToNetworkPeer(peerNetworkInstance.Address, testMessage)
+	err = peerInstance.SendMessageToNetworkPeer(peerNetworkInstance.Address, testMessage)
 	assert.NoError(t, err)
 
     time.Sleep(10 * time.Second)
@@ -61,9 +62,11 @@ func TestNetworkAdapter(t *testing.T) {
     select {
         case msg := <-messageCh:
             t.Log(msg)
+            assert.Equal(t, testMessageJson, msg)
         case err := <-errorCh:
             assert.NoError(t, err)
         default:
+            assert.Falsef(t, true, "message could not be received")
     }
 
     torInstance.StopTor()
