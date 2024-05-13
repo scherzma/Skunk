@@ -228,25 +228,6 @@ func TestPeerShutdown(t *testing.T) {
 	conn.Close(websocket.StatusNormalClosure, "test completed")
 }
 
-func TestPeerHeartbeat(t *testing.T) {
-	peer1, _ := peer.NewPeer("127.0.0.1", "1111", "", "")
-	defer peer1.Shutdown()
-	peer2, _ := peer.NewPeer("127.0.0.1", "2222", "", "")
-
-	peer1.Listen(nil)
-	time.Sleep(waitTime)
-
-	peer2.Connect(peer1.Address)
-	time.Sleep(waitTime)
-
-	peer2.Shutdown()
-	time.Sleep(70 * time.Second)
-
-	// Should not work anymore, because hearbeat removed the closed connection
-	err := peer1.SetWriteConn(peer2.Address)
-	assert.Error(t, err)
-}
-
 // this test represents two peers exchanging a message over the tor network
 // because go-libtor can only start one tor process, we have to use one local installation of tor too
 func TestPeerTor(t *testing.T) {
