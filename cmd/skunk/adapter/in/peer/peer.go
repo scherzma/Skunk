@@ -220,8 +220,8 @@ func (p *Peer) readMessage(conn *websocket.Conn, address string) (string, error)
 func (p *Peer) ReadMessages(messageCh chan<- string, errorCh chan<- error) {
 	ticker := time.NewTicker(readRateInterval)
 	go func() {
-        defer close(messageCh)
-        defer close(errorCh)
+		defer close(messageCh)
+		defer close(errorCh)
 		for {
 			select {
 			case <-ticker.C:

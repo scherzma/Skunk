@@ -2,6 +2,7 @@ package networkAdapter
 
 import (
 	"fmt"
+    "encoding/json"
 	"sync"
 
 	cretztor "github.com/cretz/bine/tor"
@@ -17,9 +18,9 @@ const (
 	SocksPort            = "9055"
 	LocalPort            = "1111"
 	RemotePort           = "2222"
-	ReusePrivateKey      = true   // Reuse private key for constant onion address
+	ReusePrivateKey      = true // Reuse private key for constant onion address
 	DeleteDataDirOnClose = false
-	UseEmbedded          = true   // Use embedded tor process
+	UseEmbedded          = true // Use embedded tor process
 )
 
 var (
@@ -35,7 +36,7 @@ type NetworkAdapter struct {
 }
 
 func NewAdapter() *NetworkAdapter {
-    // singleton
+	// singleton
 	once.Do(func() {
 		networkAdapter = &NetworkAdapter{}
 	})
@@ -43,6 +44,7 @@ func NewAdapter() *NetworkAdapter {
 	return networkAdapter
 }
 
+func (n *NetworkAdapter) SubscribeToNetwork(observer network.NetworkObserver) error {
 	if n.subscriber == observer {
 		return fmt.Errorf("network adapter is already connected to observer: %v", observer)
 	}
@@ -61,14 +63,14 @@ func NewAdapter() *NetworkAdapter {
 		return err
 	}
 
-    // begin asynchronously reading network messages.
+	// begin asynchronously reading network messages.
 	go n.readNetworkMessages()
 
 	n.subscriber = observer
 	n.peer = peerInstance
 	n.tor = torInstance
 
-    // notify the subscriber that the network is now online and send the onion address
+	// notify the subscriber that the network is now online and send the onion address
 	message := network.Message{
 		Id:              util.UUID(),
 		Timestamp:       util.CurrentTimeMillis(),
@@ -97,7 +99,7 @@ func (n *NetworkAdapter) UnsubscribeFromNetwork() error {
 		return fmt.Errorf("tor network is nil")
 	}
 
-    // stop tor and peer services
+	// stop tor and peer services
 	stopTor(n.tor)
 	stopPeer(n.peer)
 
@@ -109,10 +111,10 @@ func (n *NetworkAdapter) UnsubscribeFromNetwork() error {
 
 // SendMessageToNetworkPeer sends a message to a specified network peer
 func (n *NetworkAdapter) SendMessageToNetworkPeer(address string, message network.Message) error {
-    // connect to peer if not already connected
+	// connect to peer if not already connected
 	if !n.peer.IsConnectedTo(address) {
 		err := n.peer.Connect(address)
-        // if there is any error, we treat it as if the peer is offline
+		// if there is any error, we treat it as if the peer is offline
 		if err != nil {
 			// message subscriber that the peer is offline
 			message := network.Message{
@@ -135,12 +137,12 @@ func (n *NetworkAdapter) SendMessageToNetworkPeer(address string, message networ
 		return err
 	}
 
-	jsonMessage, err := util.JsonEncode(message)
+	jsonMessage, err := json.Marshal(message)
 	if err != nil {
 		return err
 	}
 
-	err = n.peer.WriteMessage(jsonMessage)
+	err = n.peer.WriteMessage(string(jsonMessage))
 	if err != nil {
 		return err
 	}
@@ -157,22 +159,24 @@ func (n *NetworkAdapter) readNetworkMessages() {
 	messageCh := make(chan string)
 	errorCh := make(chan error)
 
-    // read messages asynchronously; terminate on unsubscribe
-    // also closes messageCh and errorCh
+	// read messages asynchronously; terminate on unsubscribe
+	// also closes messageCh and errorCh
 	go n.peer.ReadMessages(messageCh, errorCh)
 
-    // handle incoming messages and errors
+	// handle incoming messages and errors
 	for {
 		select {
 		case msg, ok := <-messageCh:
 			if !ok {
 				return
 			}
-            if msgInterface, err := util.JsonDecode(msg); err == nil {
-                if message, ok := msgInterface.(network.Message); ok {
-                    n.SendNetworkMessageToSubscriber(message)
-                }
+            message := network.Message{}
+            err := json.Unmarshal([]byte(msg), &message)
+            if err != nil {
+                continue // optionally we could handle incorrect formatted messages
             }
+            fmt.Println(message)
+            n.SendNetworkMessageToSubscriber(message)
 		case err, ok := <-errorCh:
 			if !ok {
 				return
@@ -228,6 +232,7 @@ func startPeer(onionService *cretztor.OnionService) (*peer.Peer, error) {
 	if err != nil {
 		return nil, err
 	}
+    peerInstance.Listen(onionService)
 
 	return peerInstance, err
 }
