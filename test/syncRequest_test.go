@@ -11,12 +11,15 @@ import (
 func TestSyncRequestHandler(t *testing.T) {
 	// Create a mock network connection
 	testMessage := network.Message{
-		Id:        "8888",
-		Timestamp: 1633029445,
-		Content:   "Hello asdfasdfWorld!",
-		FromUser:  "asd",
-		ChatID:    "asdf",
-		Operation: network.TEST_MESSAGE,
+		Id:              "8888",
+		Timestamp:       1633029445,
+		Content:         "Hello World!",
+		SenderID:        "user1",
+		ReceiverID:      "user2",
+		SenderAddress:   "user1.onion",
+		ReceiverAddress: "user2.onion",
+		ChatID:          "chat1",
+		Operation:       network.TEST_MESSAGE,
 	}
 
 	peer := messageHandlers.GetPeerInstance()
@@ -27,39 +30,51 @@ func TestSyncRequestHandler(t *testing.T) {
 	mockNetworkConnection.SendMockNetworkMessageToSubscribers(testMessage)
 
 	testSyncMessage := network.Message{
-		Id:        "12345",
-		Timestamp: 1633029446,
-		Content:   "{\"existingMessageIds\": [\"<message id 1>\",\"<message id 2>\"]}",
-		FromUser:  "asd",
-		ChatID:    "asdf",
-		Operation: network.SYNC_REQUEST,
+		Id:              "12345",
+		Timestamp:       1633029446,
+		Content:         "{\"existingMessageIds\": [\"<message id 1>\",\"<message id 2>\"]}",
+		SenderID:        "user1",
+		ReceiverID:      "user2",
+		SenderAddress:   "user1.onion",
+		ReceiverAddress: "user2.onion",
+		ChatID:          "chat1",
+		Operation:       network.SYNC_REQUEST,
 	}
 
 	internalMessage := network.Message{
-		Id:        "internalMessage123!",
-		Timestamp: 1633029448,
-		Content:   "LOOOOOOOOOOOOOOOOOOOOOOOL",
-		FromUser:  "as23d",
-		ChatID:    "asdf",
-		Operation: network.SYNC_REQUEST,
+		Id:              "internalMessage123!",
+		Timestamp:       1633029448,
+		Content:         "LOOOOOOOOOOOOOOOOOOOOOOOL",
+		SenderID:        "user3",
+		ReceiverID:      "user4",
+		SenderAddress:   "user3.onion",
+		ReceiverAddress: "user4.onion",
+		ChatID:          "chat1",
+		Operation:       network.SYNC_REQUEST,
 	}
 
 	internalMessage2 := network.Message{
-		Id:        "internalMessage2",
-		Timestamp: 1633029448,
-		Content:   "WOOW",
-		FromUser:  "as23d",
-		ChatID:    "asdf",
-		Operation: network.SYNC_REQUEST,
+		Id:              "internalMessage2",
+		Timestamp:       1633029448,
+		Content:         "WOOW",
+		SenderID:        "user3",
+		ReceiverID:      "user4",
+		SenderAddress:   "user3.onion",
+		ReceiverAddress: "user4.onion",
+		ChatID:          "chat1",
+		Operation:       network.SYNC_REQUEST,
 	}
 
 	internalMessage3 := network.Message{
-		Id:        "internalMessage3",
-		Timestamp: 1633029448,
-		Content:   "WOLOLOW",
-		FromUser:  "as23d",
-		ChatID:    "asdf1",
-		Operation: network.SYNC_REQUEST,
+		Id:              "internalMessage3",
+		Timestamp:       1633029448,
+		Content:         "WOLOLOW",
+		SenderID:        "user3",
+		ReceiverID:      "user4",
+		SenderAddress:   "user3.onion",
+		ReceiverAddress: "user4.onion",
+		ChatID:          "chat2",
+		Operation:       network.SYNC_REQUEST,
 	}
 
 	chat := p_model.GetNetworkChatsInstance().GetChat(internalMessage.ChatID)

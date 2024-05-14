@@ -12,7 +12,7 @@ type JoinChatHandler struct {
 
 func (j *JoinChatHandler) HandleMessage(message network.Message) error {
 
-	j.userChatLogic.PeerJoinsChat(message.FromUser, message.ChatID)
+	j.userChatLogic.PeerJoinsChat(message.SenderID, message.ChatID)
 	//TODO make the necessary changes to the chat (SQLite (with interface of course))
 
 	return nil

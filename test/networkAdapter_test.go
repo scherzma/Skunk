@@ -34,12 +34,15 @@ func TestNetworkAdapter(t *testing.T) {
 
 	// Create a mock network connection
 	testMessage := network.Message{
-		Id:        "8888",
-		Timestamp: 1633029445,
-		Content:   "Hello asdfasdfWorld!",
-		FromUser:  "asd",
-		ChatID:    "asdf",
-		Operation: network.TEST_MESSAGE,
+		Id:              "msg1",
+		Timestamp:       1620000000,
+		Content:         "{\"message\": \"Hey everyone!\"}",
+		SenderID:        "user1",
+		ReceiverID:      "user2",
+		SenderAddress:   "user1.onion",
+		ReceiverAddress: "user2.onion",
+		ChatID:          "chat1",
+		Operation:       network.SEND_MESSAGE,
 	}
 
 	peer := MockPeer{

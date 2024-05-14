@@ -281,7 +281,7 @@ func TestPeerTor(t *testing.T) {
 		LocalPort:            "2221",
 		RemotePort:           "2222",
 		DeleteDataDirOnClose: true,
-		UseEmbedded:          true,
+		UseEmbedded:          false,
 	}
 	myTorTwo, err := tor.NewTor(conf)
 	assert.NoError(t, err)

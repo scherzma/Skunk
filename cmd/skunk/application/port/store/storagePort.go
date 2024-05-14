@@ -12,10 +12,15 @@ type ChatActionStoragePort interface {
 	ChatCreated(chatName string, chatId string) error
 }
 
+type PublicKeyAddress struct {
+	Address   string
+	PublicKey string
+}
+
 type ChatInvitationStoragePort interface {
-	InvitatedToChat(chatId string, chatName string, peers []string) error
+	InvitedToChat(messageID string, peers []PublicKeyAddress) error
 	PeerGotInvitedToChat(peerId string, chatId string) error
-	GetInvitations(peerId string) []string
+	GetInvitations(peerId string) ([]string, error)
 }
 
 type SyncStoragePort interface {

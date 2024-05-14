@@ -12,7 +12,7 @@ type LeaveChatHandler struct {
 
 func (l *LeaveChatHandler) HandleMessage(message network.Message) error {
 
-	l.userChatLogic.PeerLeavesChat(message.FromUser, message.ChatID)
+	l.userChatLogic.PeerLeavesChat(message.SenderID, message.ChatID)
 	//TODO make the necessary changes to the chat (SQLite (with interface of course))
 
 	return nil

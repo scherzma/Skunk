@@ -2,8 +2,197 @@
 
 package main
 
+import (
+	"fmt"
+	"github.com/scherzma/Skunk/cmd/skunk/adapter/out/storage/storageSQLiteAdapter"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+	"reflect"
+)
+
+/*
+type Message struct {
+	Id              string
+	Timestamp       int64
+	Content         string
+	SenderID        string
+	ReceiverID      string
+	SenderAddress   string
+	ReceiverAddress string
+	ChatID          string
+	Operation       OperationType
+}
+*/
+
 func main() {
-	//TODO implement
+
+	dbPath := "test.db"
+
+	adapter := storageSQLiteAdapter.NewStorageSQLiteAdapter(dbPath)
+
+	testMessages := []network.Message{
+		{
+			Id:              "msg1",
+			Timestamp:       1620000000,
+			Content:         "{\"message\": \"Hey everyone!\"}",
+			SenderID:        "user1",
+			ReceiverID:      "user2",
+			SenderAddress:   "user1.onion",
+			ReceiverAddress: "user2.onion",
+			ChatID:          "chat1",
+			Operation:       network.SEND_MESSAGE,
+		},
+		{
+			Id:              "sync1",
+			Timestamp:       1620000060,
+			Content:         "{\"existingMessageIds\": [\"msg1\"]}",
+			SenderID:        "user2",
+			ReceiverID:      "user1",
+			SenderAddress:   "user2.onion",
+			ReceiverAddress: "user1.onion",
+			ChatID:          "chat1",
+			Operation:       network.SYNC_REQUEST,
+		},
+		{
+			Id:              "sync2",
+			Timestamp:       1620000120,
+			Content:         "[{\"Id\":\"msg2\",\"Timestamp\":1620000090,\"Content\":\"{\\\"message\\\": \\\"Hi User1!\\\"}\",\"SenderID\":\"user3\",\"ReceiverID\":\"user1\",\"SenderAddress\":\"user3.onion\",\"ReceiverAddress\":\"user1.onion\",\"ChatID\":\"chat1\",\"Operation\":0}]",
+			SenderID:        "user1",
+			ReceiverID:      "user2",
+			SenderAddress:   "user1.onion",
+			ReceiverAddress: "user2.onion",
+			ChatID:          "chat1",
+			Operation:       network.SYNC_RESPONSE,
+		},
+		{
+			Id:              "join1",
+			Timestamp:       1620000180,
+			Content:         "",
+			SenderID:        "user4",
+			ReceiverID:      "",
+			SenderAddress:   "user4.onion",
+			ReceiverAddress: "",
+			ChatID:          "chat1",
+			Operation:       network.JOIN_CHAT,
+		},
+		{
+			Id:              "leave1",
+			Timestamp:       1620000240,
+			Content:         "",
+			SenderID:        "user3",
+			ReceiverID:      "",
+			SenderAddress:   "user3.onion",
+			ReceiverAddress: "",
+			ChatID:          "chat1",
+			Operation:       network.LEAVE_CHAT,
+		},
+		{
+			Id:              "invite1",
+			Timestamp:       1620000300,
+			Content:         "{\"chatId\": \"chat1\", \"chatName\": \"Cool Chat\", \"peers\": [\"user5.onion\", \"user6.onion\"]}",
+			SenderID:        "user1",
+			ReceiverID:      "",
+			SenderAddress:   "user1.onion",
+			ReceiverAddress: "",
+			ChatID:          "chat1",
+			Operation:       network.INVITE_TO_CHAT,
+		},
+		{
+			Id:              "file1",
+			Timestamp:       1620000360,
+			Content:         "{\"fileContent\": \"aGVsbG8gd29ybGQ=\"}",
+			SenderID:        "user2",
+			ReceiverID:      "",
+			SenderAddress:   "user2.onion",
+			ReceiverAddress: "",
+			ChatID:          "chat1",
+			Operation:       network.SEND_FILE,
+		},
+		{
+			Id:              "setuser1",
+			Timestamp:       1620000420,
+			Content:         "{\"username\": \"CoolUser1\"}",
+			SenderID:        "user1",
+			ReceiverID:      "",
+			SenderAddress:   "user1.onion",
+			ReceiverAddress: "",
+			ChatID:          "chat1",
+			Operation:       network.SET_USERNAME,
+		},
+		{
+			Id:              "test1",
+			Timestamp:       1620000480,
+			Content:         "This is a test message",
+			SenderID:        "user1",
+			ReceiverID:      "user2",
+			SenderAddress:   "user1.onion",
+			ReceiverAddress: "user2.onion",
+			ChatID:          "chat1",
+			Operation:       network.TEST_MESSAGE,
+		},
+		{
+			Id:              "test2",
+			Timestamp:       1620000540,
+			Content:         "This is another test message",
+			SenderID:        "user2",
+			ReceiverID:      "user4",
+			SenderAddress:   "user2.onion",
+			ReceiverAddress: "user4.onion",
+			ChatID:          "chat1",
+			Operation:       network.TEST_MESSAGE_2,
+		},
+	}
+
+	// Store the test messages
+	for _, msg := range testMessages {
+		err := adapter.StoreMessage(msg)
+		if err != nil {
+			fmt.Printf("Error storing message: %v", err)
+		}
+	}
+
+	fmt.Println("Messages stored")
+
+	// Retrieve the messages and compare
+	for _, msg := range testMessages {
+		retrieved, err := adapter.RetrieveMessage(msg.Id)
+		if err != nil {
+			fmt.Printf("Error retrieving message: %v", err)
+		}
+
+		fmt.Println("storedccc ", msg)
+		fmt.Println("retrieved ", retrieved)
+		if !reflect.DeepEqual(msg, retrieved) {
+			fmt.Printf("Retrieved message does not match stored message\n")
+		}
+	}
+
+	fmt.Println("Messages retrieved")
+
+	// Test GetChatMessages
+	chatMessages, err := adapter.GetChatMessages("chat1")
+	if err != nil {
+		fmt.Printf("Error getting chat messages: %v", err)
+	}
+
+	if len(chatMessages) != len(testMessages) {
+		fmt.Printf("Expected %d chat messages, got %d", len(testMessages), len(chatMessages))
+	}
+
+	// Test SetPeerUsername
+	err = adapter.SetPeerUsername("CoolUser1", "user1", "chat1")
+	if err != nil {
+		fmt.Printf("Error setting peer username: %v", err)
+	}
+
+	username, err := adapter.GetUsername("user1", "chat1")
+	if err != nil {
+		fmt.Printf("Error getting username: %v", err)
+	}
+
+	if username != "CoolUser1" {
+		fmt.Printf("Expected username 'CoolUser1', got '%s'", username)
+	}
+
 }
 
 
@@ -696,7 +885,7 @@ create table ChatMembers
     chat_member_id integer       not null
         constraint ChatMembers_pk
             primary key autoincrement,
-    date           datetime      not null,
+    timestamp      integer       not null,
     peer_id        varchar(1024) not null
         constraint ChatMembers_Peers_peer_id_fk
             references Peers
@@ -704,7 +893,31 @@ create table ChatMembers
     chat_id        varchar(1024) not null
         constraint ChatMembers_Chats_chat_id_fk
             references Chats
-            on update cascade
+            on update cascade,
+    username       varchar(50)
+);
+
+create table Messages
+(
+    message_id       varchar(1024) not null
+        constraint Messages_pk
+            primary key,
+    content          text,
+    timestamp        integer       not null,
+    operation        integer       not null,
+    sender_peer_id   varchar(1024) not null
+        constraint Messages_Peers_peer_id_fk
+            references Peers
+            on update cascade,
+    chat_id          varchar(1024) not null
+        constraint Messages_Chats_chat_id_fk
+            references Chats
+            on update cascade,
+    receiver_peer_id varchar(1024) not null
+        constraint Messages_Peers_peer_id_fk_2
+            references Peers,
+    sender_address   varchar(1024) not null,
+    receiver_address varchar(1024) not null
 );
 
 create table Invitations
@@ -712,39 +925,24 @@ create table Invitations
     invitation_id     integer       not null
         constraint Invitations_pk
             primary key autoincrement,
-    sender_peer_id    varchar(1024) not null
-        constraint Invitations_Peers_peer_id_fk
-            references Peers
-            on update cascade,
-    recipient_peer_id varchar(1024) not null
-        constraint Invitations_Peers_peer_id_fk_2
-            references Peers
-            on update cascade,
-    chat_id           varchar(1024) not null
-        constraint Invitations_Chats_chat_id_fk
-            references Chats
-            on update cascade,
-    date              datetime      not null,
-    invitation_status integer       not null
+    invitation_status integer       not null,
+    message_id        varchar(1024) not null
+        constraint Invitations_Messages_message_id_fk
+            references Messages
 );
 
-create table Messages
+create table PeersInInvitedChat
 (
-    message_id     integer       not null
-        constraint Messages_pk
+    public_key      varchar(1024) not null,
+    invited_peer_id integer       not null
+        constraint PeersInInvitedChat_pk
             primary key autoincrement,
-    content        text,
-    date           datetime      not null,
-    operation      integer       not null,
-    sender_peer_id varchar(1024) not null
-        constraint Messages_Peers_peer_id_fk
-            references Peers
-            on update cascade,
-    chat_id        varchar(1024) not null
-        constraint Messages_Chats_chat_id_fk
-            references Chats
-            on update cascade
+    address         varchar(1024) not null,
+    invitation_id   integer       not null
+        constraint PeersInInvitedChat_Invitations_invitation_id_fk
+            references Invitations
 );
+
 
 
 ------ /home/user/GolandProjects/Skunk/cmd/skunk/adapter/out/storage/storageMessageQueueSQLite.go:
@@ -783,6 +981,586 @@ func (s *StoreMessageQueueSQLite) StoreMessageQueue(string2 string) error {
 func (s *StoreMessageQueueSQLite) RetriveMessageQueue() (string, error) {
 	return "", nil
 }
+
+
+------ /home/user/GolandProjects/Skunk/cmd/skunk/adapter/out/storage/sqlStatements.sql:
+
+
+/*
+    type Message struct {
+	Id              string
+	Timestamp       int64
+	Content         string
+	SenderID        string
+	ReceiverID      string
+	SenderAddress   string
+	ReceiverAddress string
+	ChatID          string
+	Operation       OperationType
+}
+*/
+
+-- Peer Set Username
+UPDATE ChatMembers
+SET username = ?
+WHERE peer_id = ? AND chat_id = ?;
+
+-- Peer Joined Chat
+INSERT INTO ChatMembers (peer_id, chat_id)
+SELECT ?, ?
+    WHERE NOT EXISTS(SELECT 1 FROM ChatMembers WHERE peer_id=? AND chat_id=?);
+
+-- Peer Left Chat
+DELETE FROM ChatMembers
+WHERE peer_id=? AND chat_id=?;
+
+-- Chat Created
+INSERT INTO Chats (chat_id, name)
+SELECT ?, ?
+    WHERE NOT EXISTS(SELECT 1 FROM Chats WHERE chat_id=? AND name=?);
+
+-- Invited To Chat
+-- type publicKeyAddress struct {
+-- 	Address string
+-- 	PublicKey string
+-- }
+-- InvitatedToChat(messageId string, peers []publicKeyAddress) error
+INSERT INTO Invitations (message_id)
+SELECT ?
+    WHERE NOT EXISTS(SELECT 1 FROM Invitations WHERE message_id = ?);
+
+-- For each peer
+INSERT INTO PeersInInvitedChat (public_key, address, invitation_id)
+SELECT ?, ?, (SELECT Invitations.invitation_id FROM Invitations WHERE message_id = ?)
+    WHERE NOT EXISTS(SELECT 1 FROM PeersInInvitedChat WHERE public_key = ? AND address = ? AND invitation_id = (SELECT Invitations.invitation_id FROM Invitations WHERE message_id = ?));
+
+-- PeerGotInvitedToChat
+-- PeerGotInvitedToChat(message network.Message) error
+
+
+-- GetInvitations(peerId string) []string
+SELECT m.*, i.invitation_status FROM Messages m, Invitations i WHERE m.receiver_peer_id = ?
+                                                                 AND i.message_id = m.message_id AND m.operation = ?;
+
+-- GetMissingInternalMessages(chatId string, inputMessageIDs []string) []string
+SELECT * FROM Messages
+WHERE message_id NOT IN (?, ?) AND chat_id = ?;
+
+-- GetMissingExternalMessages(chatId string, inputMessageIDs []string) []string
+SELECT * FROM Messages
+WHERE (?, ?) NOT IN (SELECT message_id FROM Messages WHERE chat_id = ?) AND chat_id = ?;
+
+-- StoreMessage(message network.Message) error
+INSERT INTO Messages (message_id, date, content, sender_peer_id, receiver_peer_id, sender_address, receiver_address, chat_id, operation)
+SELECT ?, ?, ?, ?, ?, ? ,?, ?, ?
+    WHERE NOT EXISTS(SELECT 1 FROM Messages WHERE message_id = ?);
+
+-- RetrieveMessage(messageId string) (network.Message, error)
+SELECT * FROM Messages WHERE message_id = ?;
+
+-- GetChats() []Chat
+SELECT * FROM Chats;
+
+-- GetUsername(peerId string, chatId string) string
+SELECT username FROM ChatMembers WHERE peer_id = ? AND chat_id = ?;
+
+-- GetUsersInChat(chatId string) []User
+SELECT * FROM ChatMembers WHERE chat_id = ?;
+
+-- GetPeers() []string
+SELECT * FROM Peers;
+
+-- GetChatMessages(chatId string) []ChatMessage
+SELECT * FROM Messages WHERE chat_id = ?;
+
+
+------ /home/user/GolandProjects/Skunk/cmd/skunk/adapter/out/storage/storageSQLiteAdapter/StorageSQLiteAdapter.go:
+
+package storageSQLiteAdapter
+
+import (
+	"database/sql"
+	"fmt"
+	_ "github.com/mattn/go-sqlite3"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+	"log"
+	"strings"
+)
+
+type StorageSQLiteAdapter struct {
+	db *sql.DB
+}
+
+func NewStorageSQLiteAdapter(dbPath string) *StorageSQLiteAdapter {
+	db, err := sql.Open("sqlite3", dbPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Create tables if they don't exist
+	adapter := &StorageSQLiteAdapter{db: db}
+	adapter.CreateTables()
+
+	return adapter
+}
+
+func (a *StorageSQLiteAdapter) CreateTables() {
+	sqlCommands := "CREATE TABLE IF NOT EXISTS Chats (\n    chat_id VARCHAR(1024) NOT NULL CONSTRAINT Chats_pk PRIMARY KEY,\n    name VARCHAR(40) NOT NULL\n);\n\nCREATE TABLE IF NOT EXISTS Peers (\n    peer_id INTEGER NOT NULL CONSTRAINT Peers_pk PRIMARY KEY AUTOINCREMENT,\n    public_key VARCHAR(1024) NOT NULL,\n    address VARCHAR(1024) NOT NULL\n);\n\nCREATE TABLE IF NOT EXISTS ChatMembers (\n    chat_member_id INTEGER NOT NULL CONSTRAINT ChatMembers_pk PRIMARY KEY AUTOINCREMENT,\n    date INTEGER NOT NULL,\n    peer_id VARCHAR(1024) NOT NULL CONSTRAINT ChatMembers_Peers_peer_id_fk REFERENCES Peers ON UPDATE CASCADE,\n    chat_id VARCHAR(1024) NOT NULL CONSTRAINT ChatMembers_Chats_chat_id_fk REFERENCES Chats ON UPDATE CASCADE,\n    username VARCHAR(50)\n);\n\nCREATE TABLE IF NOT EXISTS Messages (\n    message_id VARCHAR(1024) NOT NULL CONSTRAINT Messages_pk PRIMARY KEY,\n    content TEXT,\n    date INTEGER NOT NULL,\n    operation INTEGER NOT NULL,\n    sender_peer_id VARCHAR(1024) NOT NULL CONSTRAINT Messages_Peers_peer_id_fk REFERENCES Peers ON UPDATE CASCADE,\n    chat_id VARCHAR(1024) NOT NULL CONSTRAINT Messages_Chats_chat_id_fk REFERENCES Chats ON UPDATE CASCADE,\n    receiver_peer_id VARCHAR(1024) NOT NULL CONSTRAINT Messages_Peers_peer_id_fk_2 REFERENCES Peers,\n    sender_address VARCHAR(1024) NOT NULL,\n    receiver_address VARCHAR(1024) NOT NULL\n);\n\nCREATE TABLE IF NOT EXISTS Invitations (\n    invitation_id INTEGER NOT NULL CONSTRAINT Invitations_pk PRIMARY KEY AUTOINCREMENT,\n    invitation_status INTEGER NOT NULL,\n    message_id VARCHAR(1024) NOT NULL CONSTRAINT Invitations_Messages_message_id_fk REFERENCES Messages\n);\n\nCREATE TABLE IF NOT EXISTS PeersInInvitedChat (\n    public_key VARCHAR(1024) NOT NULL,\n    invited_peer_id INTEGER NOT NULL CONSTRAINT PeersInInvitedChat_pk PRIMARY KEY AUTOINCREMENT,\n    address VARCHAR(1024) NOT NULL,\n    invitation_id INTEGER NOT NULL CONSTRAINT PeersInInvitedChat_Invitations_invitation_id_fk REFERENCES Invitations\n);\n"
+	_, err := a.db.Exec(sqlCommands)
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+func (a *StorageSQLiteAdapter) SetPeerUsername(username, peerID, chatID string) error {
+	stmt, err := a.db.Prepare("UPDATE ChatMembers SET username = ? WHERE peer_id = ? AND chat_id = ?")
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	_, err = stmt.Exec(username, peerID, chatID)
+	return err
+}
+
+func (a *StorageSQLiteAdapter) PeerJoinedChat(peerID, chatID string) error {
+	stmt, err := a.db.Prepare("INSERT INTO ChatMembers (date, peer_id, chat_id) SELECT datetime('now'), ?, ? WHERE NOT EXISTS (SELECT 1 FROM ChatMembers WHERE peer_id = ? AND chat_id = ?)")
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	_, err = stmt.Exec(peerID, chatID, peerID, chatID)
+	return err
+}
+
+func (a *StorageSQLiteAdapter) PeerLeftChat(peerID, chatID string) error {
+	stmt, err := a.db.Prepare("DELETE FROM ChatMembers WHERE peer_id = ? AND chat_id = ?")
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	_, err = stmt.Exec(peerID, chatID)
+	return err
+}
+
+func (a *StorageSQLiteAdapter) CreateChat(chatID, name string) error {
+	stmt, err := a.db.Prepare("INSERT INTO Chats (chat_id, name) SELECT ?, ? WHERE NOT EXISTS (SELECT 1 FROM Chats WHERE chat_id = ?)")
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	_, err = stmt.Exec(chatID, name, chatID)
+	return err
+}
+
+type PublicKeyAddress struct {
+	Address   string
+	PublicKey string
+}
+
+func (a *StorageSQLiteAdapter) InvitedToChat(messageID string, peers []PublicKeyAddress) error {
+	tx, err := a.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.Prepare("INSERT INTO Invitations (invitation_status, message_id) SELECT 0, ? WHERE NOT EXISTS (SELECT 1 FROM Invitations WHERE message_id = ?)")
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	_, err = stmt.Exec(messageID, messageID)
+	if err != nil {
+		return err
+	}
+
+	stmt, err = tx.Prepare("INSERT INTO PeersInInvitedChat (public_key, address, invitation_id) SELECT ?, ?, (SELECT invitation_id FROM Invitations WHERE message_id = ?) WHERE NOT EXISTS (SELECT 1 FROM PeersInInvitedChat WHERE public_key = ? AND address = ? AND invitation_id = (SELECT invitation_id FROM Invitations WHERE message_id = ?))")
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for _, peer := range peers {
+		_, err = stmt.Exec(peer.PublicKey, peer.Address, messageID, peer.PublicKey, peer.Address, messageID)
+		if err != nil {
+			return err
+		}
+	}
+
+	err = tx.Commit()
+	return err
+}
+
+func (a *StorageSQLiteAdapter) PeerGotInvitedToChat(peerID, chatID string) error {
+	// Implement the logic to store a peer getting invited to a chat in the database
+	// ...
+	return nil
+}
+
+func (a *StorageSQLiteAdapter) GetInvitations(peerID string) ([]string, error) {
+	rows, err := a.db.Query(`
+		SELECT m.*, i.invitation_status 
+		FROM Messages m
+		JOIN Invitations i ON i.message_id = m.message_id
+		WHERE m.receiver_peer_id = ? AND m.operation = ?
+	`, peerID, network.INVITE_TO_CHAT)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var invitations []string
+	for rows.Next() {
+		var invitation string
+		err := rows.Scan(&invitation)
+		if err != nil {
+			return nil, err
+		}
+		invitations = append(invitations, invitation)
+	}
+
+	return invitations, nil
+}
+
+func (a *StorageSQLiteAdapter) GetMissingInternalMessages(chatID string, inputMessageIDs []string) ([]string, error) {
+	query := "SELECT message_id FROM Messages WHERE chat_id = ? AND message_id NOT IN (?" + strings.Repeat(",?", len(inputMessageIDs)-1) + ")"
+	args := make([]interface{}, len(inputMessageIDs)+1)
+	args[0] = chatID
+	for i, id := range inputMessageIDs {
+		args[i+1] = id
+	}
+
+	rows, err := a.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var messages []string
+	for rows.Next() {
+		var message string
+		err := rows.Scan(&message)
+		if err != nil {
+			return nil, err
+		}
+		messages = append(messages, message)
+	}
+
+	return messages, nil
+}
+
+func (a *StorageSQLiteAdapter) GetMissingExternalMessages(chatID string, inputMessageIDs []string) ([]string, error) {
+	query := "SELECT message_id FROM Messages WHERE chat_id = ? AND message_id NOT IN (SELECT message_id FROM Messages WHERE chat_id = ? AND message_id IN (?" + strings.Repeat(",?", len(inputMessageIDs)-1) + "))"
+	args := make([]interface{}, len(inputMessageIDs)+2)
+	args[0] = chatID
+	args[1] = chatID
+	for i, id := range inputMessageIDs {
+		args[i+2] = id
+	}
+
+	rows, err := a.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var messages []string
+	for rows.Next() {
+		var message string
+		err := rows.Scan(&message)
+		if err != nil {
+			return nil, err
+		}
+		messages = append(messages, message)
+	}
+
+	return messages, nil
+}
+
+func (a *StorageSQLiteAdapter) StoreMessage(message network.Message) error {
+	// Check if sender exists in Peers table, and insert if not
+	err := a.insertPeerIfNotExists(message.SenderID, message.SenderAddress)
+	if err != nil {
+		return err
+	}
+
+	// Check if receiver exists in Peers table, and insert if not
+	err = a.insertPeerIfNotExists(message.ReceiverID, message.ReceiverAddress)
+	if err != nil {
+		return err
+	}
+
+	stmt, err := a.db.Prepare(`
+        INSERT INTO Messages (message_id, date, content, sender_peer_id, receiver_peer_id, sender_address, receiver_address, chat_id, operation)
+        SELECT ?, ?, ?, (SELECT peer_id FROM Peers WHERE public_key = ?), (SELECT peer_id FROM Peers WHERE public_key = ?), ?, ?, ?, ?
+        WHERE NOT EXISTS (SELECT 1 FROM Messages WHERE message_id = ?)
+    `)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	_, err = stmt.Exec(
+		message.Id, message.Timestamp, message.Content, message.SenderID, message.ReceiverID,
+		message.SenderAddress, message.ReceiverAddress, message.ChatID, message.Operation, message.Id,
+	)
+	return err
+}
+
+func (a *StorageSQLiteAdapter) insertPeerIfNotExists(publicKey, address string) error {
+	stmt, err := a.db.Prepare(`
+        INSERT INTO Peers (public_key, address)
+        SELECT ?, ?
+        WHERE NOT EXISTS (SELECT 1 FROM Peers WHERE public_key = ?)
+    `)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	_, err = stmt.Exec(publicKey, address, publicKey)
+	return err
+}
+
+func (a *StorageSQLiteAdapter) RetrieveMessage(messageID string) (network.Message, error) {
+	row := a.db.QueryRow(`
+		SELECT m.message_id, m.date, m.content, m.operation, p.public_key, p2.public_key, m.sender_address, m.receiver_address, m.chat_id
+		FROM Messages m, Peers p, Peers p2
+		WHERE message_id = ? AND m.sender_peer_id = p.peer_id AND m.receiver_peer_id = p2.peer_id
+	`, messageID)
+
+	var message network.Message
+	err := row.Scan(
+		&message.Id, &message.Timestamp, &message.Content, &message.Operation, &message.SenderID, &message.ReceiverID,
+		&message.SenderAddress, &message.ReceiverAddress, &message.ChatID,
+	)
+	if err != nil {
+		return network.Message{}, err
+	}
+
+	return message, nil
+}
+
+type Chat struct {
+	ChatID string
+	Name   string
+}
+
+func (a *StorageSQLiteAdapter) GetChats() ([]Chat, error) {
+	rows, err := a.db.Query("SELECT chat_id, name FROM Chats")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var chats []Chat
+	for rows.Next() {
+		var chat Chat
+		err := rows.Scan(&chat.ChatID, &chat.Name)
+		if err != nil {
+			return nil, err
+		}
+		chats = append(chats, chat)
+	}
+
+	return chats, nil
+}
+
+func (a *StorageSQLiteAdapter) GetUsername(peerID, chatID string) (string, error) {
+	row := a.db.QueryRow("SELECT username FROM ChatMembers WHERE peer_id = ? AND chat_id = ?", peerID, chatID)
+
+	var username string
+	err := row.Scan(&username)
+	if err != nil {
+		return "", err
+	}
+
+	return username, nil
+}
+
+type User struct {
+	PeerID   string
+	ChatID   string
+	Username string
+}
+
+func (a *StorageSQLiteAdapter) GetUsersInChat(chatID string) ([]User, error) {
+	rows, err := a.db.Query("SELECT peer_id, chat_id, username FROM ChatMembers WHERE chat_id = ?", chatID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var users []User
+	for rows.Next() {
+		var user User
+		err := rows.Scan(&user.PeerID, &user.ChatID, &user.Username)
+		if err != nil {
+			return nil, err
+		}
+		users = append(users, user)
+	}
+
+	return users, nil
+}
+
+func (a *StorageSQLiteAdapter) GetPeers() ([]string, error) {
+	rows, err := a.db.Query("SELECT public_key FROM Peers")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var peers []string
+	for rows.Next() {
+		var peer string
+		err := rows.Scan(&peer)
+		if err != nil {
+			return nil, err
+		}
+		peers = append(peers, peer)
+	}
+
+	return peers, nil
+}
+
+func (a *StorageSQLiteAdapter) GetChatMessages(chatID string) ([]network.Message, error) {
+	rows, err := a.db.Query(`
+		SELECT m.message_id, m.content, m.date, m.operation, p.public_key, m.chat_id, p2.public_key, m.sender_address, m.receiver_address
+		FROM Messages m, Peers p, Peers p2
+		WHERE chat_id = ? AND m.sender_peer_id = p.peer_id AND m.receiver_peer_id = p2.peer_id
+	`, chatID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var messages []network.Message
+	for rows.Next() {
+		var message network.Message
+		err := rows.Scan(
+			&message.Id, &message.Content, &message.Timestamp, &message.Operation, &message.SenderID, &message.ChatID, &message.ReceiverID,
+			&message.SenderAddress, &message.ReceiverAddress,
+		)
+		if err != nil {
+			return nil, err
+		}
+		messages = append(messages, message)
+	}
+
+	return messages, nil
+}
+
+func (a *StorageSQLiteAdapter) JoinChat(peerID, chatID string, invitationID int) error {
+	// Check if the invitation exists and get the chat name
+	var chatName string
+	err := a.db.QueryRow("SELECT m.chat_id, c.name FROM Invitations i JOIN Messages m ON i.message_id = m.message_id JOIN Chats c ON m.chat_id = c.chat_id WHERE i.invitation_id = ? AND i.invitation_status = 0", invitationID).Scan(&chatID, &chatName)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("invitation not found or already accepted")
+		}
+		return err
+	}
+
+	// Check if the chat exists, and create it if not
+	err = a.createChatIfNotExists(chatID, chatName)
+	if err != nil {
+		return err
+	}
+
+	// Check if the peer exists, and insert if not
+	err = a.insertPeerIfNotExists(peerID, "")
+	if err != nil {
+		return err
+	}
+
+	// Insert the peer into the chat
+	stmt, err := a.db.Prepare(`
+        INSERT INTO ChatMembers (date, peer_id, chat_id)
+        SELECT datetime('now'), (SELECT peer_id FROM Peers WHERE public_key = ?), ?
+        WHERE NOT EXISTS (SELECT 1 FROM ChatMembers WHERE peer_id = (SELECT peer_id FROM Peers WHERE public_key = ?) AND chat_id = ?)
+    `)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	_, err = stmt.Exec(peerID, chatID, peerID, chatID)
+	if err != nil {
+		return err
+	}
+
+	// Update the invitation status
+	_, err = a.db.Exec("UPDATE Invitations SET invitation_status = 1 WHERE invitation_id = ?", invitationID)
+	return err
+}
+
+func (a *StorageSQLiteAdapter) createChatIfNotExists(chatID, chatName string) error {
+	stmt, err := a.db.Prepare(`
+        INSERT INTO Chats (chat_id, name)
+        SELECT ?, ?
+        WHERE NOT EXISTS (SELECT 1 FROM Chats WHERE chat_id = ?)
+    `)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	_, err = stmt.Exec(chatID, chatName, chatID)
+	return err
+}
+
+
+------ /home/user/GolandProjects/Skunk/cmd/skunk/adapter/out/storage/storageSQLiteAdapter/createTables.sql:
+
+CREATE TABLE IF NOT EXISTS Chats (
+    chat_id VARCHAR(1024) NOT NULL CONSTRAINT Chats_pk PRIMARY KEY,
+    name VARCHAR(40) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS Peers (
+    peer_id INTEGER NOT NULL CONSTRAINT Peers_pk PRIMARY KEY AUTOINCREMENT,
+    public_key VARCHAR(1024) NOT NULL,
+    address VARCHAR(1024) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS ChatMembers (
+    chat_member_id INTEGER NOT NULL CONSTRAINT ChatMembers_pk PRIMARY KEY AUTOINCREMENT,
+    date INTEGER NOT NULL,
+    peer_id VARCHAR(1024) NOT NULL CONSTRAINT ChatMembers_Peers_peer_id_fk REFERENCES Peers ON UPDATE CASCADE,
+    chat_id VARCHAR(1024) NOT NULL CONSTRAINT ChatMembers_Chats_chat_id_fk REFERENCES Chats ON UPDATE CASCADE,
+    username VARCHAR(50)
+);
+
+CREATE TABLE IF NOT EXISTS Messages (
+    message_id VARCHAR(1024) NOT NULL CONSTRAINT Messages_pk PRIMARY KEY,
+    content TEXT,
+    date INTEGER NOT NULL,
+    operation INTEGER NOT NULL,
+    sender_peer_id VARCHAR(1024) NOT NULL CONSTRAINT Messages_Peers_peer_id_fk REFERENCES Peers ON UPDATE CASCADE,
+    chat_id VARCHAR(1024) NOT NULL CONSTRAINT Messages_Chats_chat_id_fk REFERENCES Chats ON UPDATE CASCADE,
+    receiver_peer_id VARCHAR(1024) NOT NULL CONSTRAINT Messages_Peers_peer_id_fk_2 REFERENCES Peers,
+    sender_address VARCHAR(1024) NOT NULL,
+    receiver_address VARCHAR(1024) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS Invitations (
+    invitation_id INTEGER NOT NULL CONSTRAINT Invitations_pk PRIMARY KEY AUTOINCREMENT,
+    invitation_status INTEGER NOT NULL,
+    message_id VARCHAR(1024) NOT NULL CONSTRAINT Invitations_Messages_message_id_fk REFERENCES Messages
+);
+
+CREATE TABLE IF NOT EXISTS PeersInInvitedChat (
+    public_key VARCHAR(1024) NOT NULL,
+    invited_peer_id INTEGER NOT NULL CONSTRAINT PeersInInvitedChat_pk PRIMARY KEY AUTOINCREMENT,
+    address VARCHAR(1024) NOT NULL,
+    invitation_id INTEGER NOT NULL CONSTRAINT PeersInInvitedChat_Invitations_invitation_id_fk REFERENCES Invitations
+);
 
 
 ------ /home/user/GolandProjects/Skunk/cmd/skunk/application/domain/chat/chatLogicInterface.go:
@@ -1051,11 +1829,13 @@ import (
 	"fmt"
 	"github.com/scherzma/Skunk/cmd/skunk/application/domain/chat"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/store"
 )
 
 // This Peer gets invited to a chat
 type InviteToChatHandler struct {
-	userChatLogic chat.ChatLogic
+	userChatLogic         chat.ChatLogic
+	chatInvitationStorage store.ChatInvitationStoragePort
 }
 
 func (i *InviteToChatHandler) HandleMessage(message network.Message) error {
@@ -1084,9 +1864,7 @@ func (i *InviteToChatHandler) HandleMessage(message network.Message) error {
 		return err
 	}
 
-	i.userChatLogic.ReceiveChatInvitation(message.FromUser, content.ChatID, content.ChatName, content.Peers)
-	//TODO store received chat invitation for later use
-	// For example: if the user wants to join the chat
+	i.userChatLogic.ReceiveChatInvitation(message.SenderID, content.ChatID, content.ChatName, content.Peers)
 
 	return nil
 }
@@ -1108,7 +1886,7 @@ type JoinChatHandler struct {
 
 func (j *JoinChatHandler) HandleMessage(message network.Message) error {
 
-	j.userChatLogic.PeerJoinsChat(message.FromUser, message.ChatID)
+	j.userChatLogic.PeerJoinsChat(message.SenderID, message.ChatID)
 	//TODO make the necessary changes to the chat (SQLite (with interface of course))
 
 	return nil
@@ -1131,7 +1909,7 @@ type LeaveChatHandler struct {
 
 func (l *LeaveChatHandler) HandleMessage(message network.Message) error {
 
-	l.userChatLogic.PeerLeavesChat(message.FromUser, message.ChatID)
+	l.userChatLogic.PeerLeavesChat(message.SenderID, message.ChatID)
 	//TODO make the necessary changes to the chat (SQLite (with interface of course))
 
 	return nil
@@ -1155,6 +1933,7 @@ package messageHandlers
 
 import (
 	"errors"
+	"github.com/scherzma/Skunk/cmd/skunk/adapter/out/storage/storageSQLiteAdapter"
 	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_model"
 	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_service"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
@@ -1220,6 +1999,8 @@ func (p *Peer) Notify(message network.Message) error {
 			return errors.New("invalid message")
 		}
 
+		storage := storageSQLiteAdapter.NewStorageSQLiteAdapter("test.db")
+		storage.StoreMessage(message)
 		return handler.HandleMessage(message)
 	}
 	return errors.New("invalid message operation")
@@ -1275,7 +2056,7 @@ func (s *SendFileHandler) HandleMessage(message network.Message) error {
 		return err
 	}
 
-	s.userChatLogic.ReceiveFile(message.FromUser, message.ChatID, string(content.FileContent))
+	s.userChatLogic.ReceiveFile(message.SenderID, message.ChatID, string(content.FileContent))
 	//TODO that's not the right way to do it
 	// The file should be stored in a file system
 	// Also "ReceiveFile" should receive the file path instead of the file content
@@ -1318,7 +2099,7 @@ func (s *SendMessageHandler) HandleMessage(message network.Message) error {
 		return err
 	}
 
-	s.userChatLogic.RecieveMessage(message.FromUser, message.ChatID, content.Message)
+	s.userChatLogic.RecieveMessage(message.SenderID, message.ChatID, content.Message)
 
 	return nil
 }
@@ -1358,7 +2139,7 @@ func (s *SetUsernameHandler) HandleMessage(message network.Message) error {
 		return err
 	}
 
-	s.userChatLogic.PeerSetsUsername(message.FromUser, message.ChatID, content.Username)
+	s.userChatLogic.PeerSetsUsername(message.SenderID, message.ChatID, content.Username)
 
 	return nil
 }
@@ -1425,22 +2206,28 @@ func (s *SyncRequestHandler) HandleMessage(message network.Message) error {
 
 	// Send the sync response to the other peer
 	syncResponse := network.Message{
-		Id:        uuid.New().String(),
-		Timestamp: time.Now().UnixNano(),
-		Content:   string(externalMessagesBytes),
-		FromUser:  chatMessageRepo.GetUsername(),
-		ChatID:    message.ChatID,
-		Operation: network.SYNC_RESPONSE,
+		Id:              uuid.New().String(),
+		Timestamp:       time.Now().UnixNano(),
+		Content:         string(externalMessagesBytes),
+		SenderID:        chatMessageRepo.GetUsername(), // TODO: change
+		ReceiverID:      message.SenderID,              // TODO: change
+		SenderAddress:   message.SenderAddress,         // TODO: change
+		ReceiverAddress: message.ReceiverAddress,       // TODO: change
+		ChatID:          message.ChatID,
+		Operation:       network.SYNC_RESPONSE,
 	}
 
 	// Send sync request to other peer to get the difference between the messages that the other peer knows this peer does not know
 	syncRequest := network.Message{
-		Id:        uuid.New().String(),
-		Timestamp: time.Now().UnixNano(),
-		Content:   string(internalMessagesBytes),
-		FromUser:  chatMessageRepo.GetUsername(),
-		ChatID:    message.ChatID,
-		Operation: network.SYNC_REQUEST,
+		Id:              uuid.New().String(),
+		Timestamp:       time.Now().UnixNano(),
+		Content:         string(internalMessagesBytes),
+		SenderID:        chatMessageRepo.GetUsername(),
+		ReceiverID:      message.ReceiverID,
+		SenderAddress:   message.SenderAddress,
+		ReceiverAddress: message.ReceiverAddress,
+		ChatID:          message.ChatID,
+		Operation:       network.SYNC_REQUEST,
 	}
 
 	peer := GetPeerInstance()
@@ -1545,8 +2332,9 @@ type Message struct {
 	Id              string
 	Timestamp       int64
 	Content         string
-	FromUser        string // User Address or ID
-	SenderAddress   string // User Address or ID
+	SenderID        string
+	ReceiverID      string
+	SenderAddress   string
 	ReceiverAddress string
 	ChatID          string
 	Operation       OperationType
@@ -1650,7 +2438,7 @@ type User struct {
 
 type DisplayStoragePort interface {
 	GetChats() []Chat
-	GetUsername(peerId string) string
+	GetUsername(peerId string, chatId string) string
 	GetUsersInChat(chatId string) []User
 	GetPeers() []string
 	GetChatMessages(chatId string) []ChatMessage
@@ -1674,36 +2462,48 @@ func setup() (*p_model.NetworkChatMessages, network.Message, network.Message, ne
 	ncm := p_model.NewNetworkChatMessages()
 
 	message1 := network.Message{
-		Id:        "1",
-		Timestamp: 1633029442,
-		Content:   "Hello, user2!",
-		FromUser:  "user1",
-		ChatID:    "user2",
-		Operation: network.SEND_MESSAGE,
+		Id:              "1",
+		Timestamp:       1633029442,
+		Content:         "{\"message\": \"Hello, user2!\"}",
+		SenderID:        "user1",
+		ReceiverID:      "user2",
+		SenderAddress:   "user1.onion",
+		ReceiverAddress: "user2.onion",
+		ChatID:          "chat1",
+		Operation:       network.SEND_MESSAGE,
 	}
 	message2 := network.Message{
-		Id:        "2",
-		Timestamp: 1633029443,
-		Content:   "Hello, user1!",
-		FromUser:  "user2",
-		ChatID:    "user1",
-		Operation: network.SEND_MESSAGE,
+		Id:              "2",
+		Timestamp:       1633029443,
+		Content:         "{\"message\": \"Hello, user1!\"}",
+		SenderID:        "user2",
+		ReceiverID:      "user1",
+		SenderAddress:   "user2.onion",
+		ReceiverAddress: "user1.onion",
+		ChatID:          "chat1",
+		Operation:       network.SEND_MESSAGE,
 	}
 	message3 := network.Message{
-		Id:        "3",
-		Timestamp: 1633029444,
-		Content:   "Hello, user3!",
-		FromUser:  "user1",
-		ChatID:    "user3",
-		Operation: network.SEND_MESSAGE,
+		Id:              "3",
+		Timestamp:       1633029444,
+		Content:         "{\"message\": \"Hello, user3!\"}",
+		SenderID:        "user1",
+		ReceiverID:      "user3",
+		SenderAddress:   "user1.onion",
+		ReceiverAddress: "user3.onion",
+		ChatID:          "chat2",
+		Operation:       network.SEND_MESSAGE,
 	}
 	message4 := network.Message{
-		Id:        "4",
-		Timestamp: 1633029445,
-		Content:   "Hello, user4!",
-		FromUser:  "user2",
-		ChatID:    "user4",
-		Operation: network.SEND_MESSAGE,
+		Id:              "4",
+		Timestamp:       1633029445,
+		Content:         "{\"message\": \"Hello, user4!\"}",
+		SenderID:        "user2",
+		ReceiverID:      "user4",
+		SenderAddress:   "user2.onion",
+		ReceiverAddress: "user4.onion",
+		ChatID:          "chat3",
+		Operation:       network.SEND_MESSAGE,
 	}
 
 	return ncm, message1, message2, message3, message4
@@ -1786,10 +2586,15 @@ func TestNotify(t *testing.T) {
 	peer := messageHandlers.GetPeerInstance()
 
 	testMessage := network.Message{
-		Id:        "8888",
-		Timestamp: 1633029445,
-		Content:   "Hello World!",
-		Operation: network.TEST_MESSAGE,
+		Id:              "8888",
+		Timestamp:       1633029445,
+		Content:         "Hello World!",
+		SenderID:        "user1",
+		ReceiverID:      "user2",
+		SenderAddress:   "user1.onion",
+		ReceiverAddress: "user2.onion",
+		ChatID:          "chat1",
+		Operation:       network.TEST_MESSAGE,
 	}
 
 	err := peer.Notify(testMessage)
@@ -2095,7 +2900,7 @@ func TestPeerTor(t *testing.T) {
 		LocalPort:            "2221",
 		RemotePort:           "2222",
 		DeleteDataDirOnClose: true,
-		UseEmbedded:          true,
+		UseEmbedded:          false,
 	}
 	myTorTwo, err := tor.NewTor(conf)
 	assert.NoError(t, err)
@@ -2163,7 +2968,7 @@ func TestStartTor(t *testing.T) {
 		LocalPort:            "1111",
 		RemotePort:           "2222",
 		DeleteDataDirOnClose: true,
-		UseEmbedded:          true,
+		UseEmbedded:          false,
 	}
 	myTor, err := tor.NewTor(conf)
 	assert.NoError(t, err)
@@ -2181,7 +2986,7 @@ func TestStartHiddenService(t *testing.T) {
 		LocalPort:            "3333",
 		RemotePort:           "4444",
 		DeleteDataDirOnClose: true,
-		UseEmbedded:          true,
+		UseEmbedded:          false,
 	}
 	myTor, err := tor.NewTor(conf)
 	assert.NoError(t, err)
@@ -2209,7 +3014,7 @@ func TestStopTor(t *testing.T) {
 		LocalPort:            "5555",
 		RemotePort:           "6666",
 		DeleteDataDirOnClose: true,
-		UseEmbedded:          true,
+		UseEmbedded:          false,
 	}
 	myTor, err := tor.NewTor(conf)
 	assert.NoError(t, err)
@@ -2235,7 +3040,7 @@ func TestReusePrivateKeyTor(t *testing.T) {
 		RemotePort:           "4321",
 		DeleteDataDirOnClose: false,
 		ReusePrivateKey:      true,
-		UseEmbedded:          true,
+		UseEmbedded:          false,
 	}
 	myTor, err := tor.NewTor(conf)
 	assert.NoError(t, err)
@@ -2262,7 +3067,7 @@ func TestReusePrivateKeyTor(t *testing.T) {
 		RemotePort:           "1010",
 		DeleteDataDirOnClose: true,
 		ReusePrivateKey:      true,
-		UseEmbedded:          true,
+		UseEmbedded:          false,
 	}
 	myTor, err = tor.NewTor(conf)
 	assert.NoError(t, err)
@@ -2320,12 +3125,15 @@ func TestNetworkAdapter(t *testing.T) {
 
 	// Create a mock network connection
 	testMessage := network.Message{
-		Id:        "8888",
-		Timestamp: 1633029445,
-		Content:   "Hello asdfasdfWorld!",
-		FromUser:  "asd",
-		ChatID:    "asdf",
-		Operation: network.TEST_MESSAGE,
+		Id:              "msg1",
+		Timestamp:       1620000000,
+		Content:         "{\"message\": \"Hey everyone!\"}",
+		SenderID:        "user1",
+		ReceiverID:      "user2",
+		SenderAddress:   "user1.onion",
+		ReceiverAddress: "user2.onion",
+		ChatID:          "chat1",
+		Operation:       network.SEND_MESSAGE,
 	}
 
 	peer := MockPeer{
@@ -2356,12 +3164,15 @@ import (
 func TestSyncRequestHandler(t *testing.T) {
 	// Create a mock network connection
 	testMessage := network.Message{
-		Id:        "8888",
-		Timestamp: 1633029445,
-		Content:   "Hello asdfasdfWorld!",
-		FromUser:  "asd",
-		ChatID:    "asdf",
-		Operation: network.TEST_MESSAGE,
+		Id:              "8888",
+		Timestamp:       1633029445,
+		Content:         "Hello World!",
+		SenderID:        "user1",
+		ReceiverID:      "user2",
+		SenderAddress:   "user1.onion",
+		ReceiverAddress: "user2.onion",
+		ChatID:          "chat1",
+		Operation:       network.TEST_MESSAGE,
 	}
 
 	peer := messageHandlers.GetPeerInstance()
@@ -2372,39 +3183,51 @@ func TestSyncRequestHandler(t *testing.T) {
 	mockNetworkConnection.SendMockNetworkMessageToSubscribers(testMessage)
 
 	testSyncMessage := network.Message{
-		Id:        "12345",
-		Timestamp: 1633029446,
-		Content:   "{\"existingMessageIds\": [\"<message id 1>\",\"<message id 2>\"]}",
-		FromUser:  "asd",
-		ChatID:    "asdf",
-		Operation: network.SYNC_REQUEST,
+		Id:              "12345",
+		Timestamp:       1633029446,
+		Content:         "{\"existingMessageIds\": [\"<message id 1>\",\"<message id 2>\"]}",
+		SenderID:        "user1",
+		ReceiverID:      "user2",
+		SenderAddress:   "user1.onion",
+		ReceiverAddress: "user2.onion",
+		ChatID:          "chat1",
+		Operation:       network.SYNC_REQUEST,
 	}
 
 	internalMessage := network.Message{
-		Id:        "internalMessage123!",
-		Timestamp: 1633029448,
-		Content:   "LOOOOOOOOOOOOOOOOOOOOOOOL",
-		FromUser:  "as23d",
-		ChatID:    "asdf",
-		Operation: network.SYNC_REQUEST,
+		Id:              "internalMessage123!",
+		Timestamp:       1633029448,
+		Content:         "LOOOOOOOOOOOOOOOOOOOOOOOL",
+		SenderID:        "user3",
+		ReceiverID:      "user4",
+		SenderAddress:   "user3.onion",
+		ReceiverAddress: "user4.onion",
+		ChatID:          "chat1",
+		Operation:       network.SYNC_REQUEST,
 	}
 
 	internalMessage2 := network.Message{
-		Id:        "internalMessage2",
-		Timestamp: 1633029448,
-		Content:   "WOOW",
-		FromUser:  "as23d",
-		ChatID:    "asdf",
-		Operation: network.SYNC_REQUEST,
+		Id:              "internalMessage2",
+		Timestamp:       1633029448,
+		Content:         "WOOW",
+		SenderID:        "user3",
+		ReceiverID:      "user4",
+		SenderAddress:   "user3.onion",
+		ReceiverAddress: "user4.onion",
+		ChatID:          "chat1",
+		Operation:       network.SYNC_REQUEST,
 	}
 
 	internalMessage3 := network.Message{
-		Id:        "internalMessage3",
-		Timestamp: 1633029448,
-		Content:   "WOLOLOW",
-		FromUser:  "as23d",
-		ChatID:    "asdf1",
-		Operation: network.SYNC_REQUEST,
+		Id:              "internalMessage3",
+		Timestamp:       1633029448,
+		Content:         "WOLOLOW",
+		SenderID:        "user3",
+		ReceiverID:      "user4",
+		SenderAddress:   "user3.onion",
+		ReceiverAddress: "user4.onion",
+		ChatID:          "chat2",
+		Operation:       network.SYNC_REQUEST,
 	}
 
 	chat := p_model.GetNetworkChatsInstance().GetChat(internalMessage.ChatID)
@@ -2416,6 +3239,190 @@ func TestSyncRequestHandler(t *testing.T) {
 
 	mockNetworkConnection.SendMockNetworkMessageToSubscribers(testSyncMessage)
 
+}
+
+
+------ /home/user/GolandProjects/Skunk/test/storageSQLiteAdapter_test.go:
+
+package test
+
+import (
+	"fmt"
+	"github.com/scherzma/Skunk/cmd/skunk/adapter/out/storage/storageSQLiteAdapter"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+	"os"
+	"reflect"
+	"testing"
+)
+
+func TestStorageSQLiteAdapter(t *testing.T) {
+	// Create a temporary database for testing
+	dbPath := "test.db"
+	defer os.Remove(dbPath)
+
+	adapter := storageSQLiteAdapter.NewStorageSQLiteAdapter(dbPath)
+
+	testMessages := []network.Message{
+		{
+			Id:              "msg1",
+			Timestamp:       1620000000,
+			Content:         "{\"message\": \"Hey everyone!\"}",
+			SenderID:        "user1",
+			ReceiverID:      "user2",
+			SenderAddress:   "user1.onion",
+			ReceiverAddress: "user2.onion",
+			ChatID:          "chat1",
+			Operation:       network.SEND_MESSAGE,
+		},
+		{
+			Id:              "sync1",
+			Timestamp:       1620000060,
+			Content:         "{\"existingMessageIds\": [\"msg1\"]}",
+			SenderID:        "user2",
+			ReceiverID:      "user1",
+			SenderAddress:   "user2.onion",
+			ReceiverAddress: "user1.onion",
+			ChatID:          "chat1",
+			Operation:       network.SYNC_REQUEST,
+		},
+		{
+			Id:              "sync2",
+			Timestamp:       1620000120,
+			Content:         "[{\"Id\":\"msg2\",\"Timestamp\":1620000090,\"Content\":\"{\\\"message\\\": \\\"Hi User1!\\\"}\",\"SenderID\":\"user3\",\"ReceiverID\":\"user1\",\"SenderAddress\":\"user3.onion\",\"ReceiverAddress\":\"user1.onion\",\"ChatID\":\"chat1\",\"Operation\":0}]",
+			SenderID:        "user1",
+			ReceiverID:      "user2",
+			SenderAddress:   "user1.onion",
+			ReceiverAddress: "user2.onion",
+			ChatID:          "chat1",
+			Operation:       network.SYNC_RESPONSE,
+		},
+		{
+			Id:              "join1",
+			Timestamp:       1620000180,
+			Content:         "",
+			SenderID:        "user4",
+			ReceiverID:      "",
+			SenderAddress:   "user4.onion",
+			ReceiverAddress: "",
+			ChatID:          "chat1",
+			Operation:       network.JOIN_CHAT,
+		},
+		{
+			Id:              "leave1",
+			Timestamp:       1620000240,
+			Content:         "",
+			SenderID:        "user3",
+			ReceiverID:      "",
+			SenderAddress:   "user3.onion",
+			ReceiverAddress: "",
+			ChatID:          "chat1",
+			Operation:       network.LEAVE_CHAT,
+		},
+		{
+			Id:              "invite1",
+			Timestamp:       1620000300,
+			Content:         "{\"chatId\": \"chat1\", \"chatName\": \"Cool Chat\", \"peers\": [\"user5.onion\", \"user6.onion\"]}",
+			SenderID:        "user1",
+			ReceiverID:      "",
+			SenderAddress:   "user1.onion",
+			ReceiverAddress: "",
+			ChatID:          "chat1",
+			Operation:       network.INVITE_TO_CHAT,
+		},
+		{
+			Id:              "file1",
+			Timestamp:       1620000360,
+			Content:         "{\"fileContent\": \"aGVsbG8gd29ybGQ=\"}",
+			SenderID:        "user2",
+			ReceiverID:      "",
+			SenderAddress:   "user2.onion",
+			ReceiverAddress: "",
+			ChatID:          "chat1",
+			Operation:       network.SEND_FILE,
+		},
+		{
+			Id:              "setuser1",
+			Timestamp:       1620000420,
+			Content:         "{\"username\": \"CoolUser1\"}",
+			SenderID:        "user1",
+			ReceiverID:      "",
+			SenderAddress:   "user1.onion",
+			ReceiverAddress: "",
+			ChatID:          "chat1",
+			Operation:       network.SET_USERNAME,
+		},
+		{
+			Id:              "test1",
+			Timestamp:       1620000480,
+			Content:         "This is a test message",
+			SenderID:        "user1",
+			ReceiverID:      "user2",
+			SenderAddress:   "user1.onion",
+			ReceiverAddress: "user2.onion",
+			ChatID:          "chat1",
+			Operation:       network.TEST_MESSAGE,
+		},
+		{
+			Id:              "test2",
+			Timestamp:       1620000540,
+			Content:         "This is another test message",
+			SenderID:        "user2",
+			ReceiverID:      "user4",
+			SenderAddress:   "user2.onion",
+			ReceiverAddress: "user4.onion",
+			ChatID:          "chat1",
+			Operation:       network.TEST_MESSAGE_2,
+		},
+	}
+
+	// Store the test messages
+	for _, msg := range testMessages {
+		err := adapter.StoreMessage(msg)
+		if err != nil {
+			t.Errorf("Error storing message: %v", err)
+		}
+	}
+
+	fmt.Println("Messages stored")
+	// Retrieve the messages and compare
+	for _, msg := range testMessages {
+		retrieved, err := adapter.RetrieveMessage(msg.Id)
+		if err != nil {
+			t.Errorf("Error retrieving message: %v", err)
+		}
+		fmt.Println(retrieved)
+		fmt.Println(msg)
+		if !reflect.DeepEqual(msg, retrieved) {
+			t.Errorf("Retrieved message does not match stored message")
+		}
+	}
+
+	// Test GetChatMessages
+	chatMessages, err := adapter.GetChatMessages("chat1")
+	if err != nil {
+		t.Errorf("Error getting chat messages: %v", err)
+	}
+
+	if len(chatMessages) != len(testMessages) {
+		t.Errorf("Expected %d chat messages, got %d", len(testMessages), len(chatMessages))
+	}
+
+	// Test SetPeerUsername
+	err = adapter.SetPeerUsername("CoolUser1", "user1", "chat1")
+	if err != nil {
+		t.Errorf("Error setting peer username: %v", err)
+	}
+
+	username, err := adapter.GetUsername("user1", "chat1")
+	if err != nil {
+		t.Errorf("Error getting username: %v", err)
+	}
+
+	if username != "CoolUser1" {
+		t.Errorf("Expected username 'CoolUser1', got '%s'", username)
+	}
+
+	// Additional tests can be added for other methods...
 }
 
 

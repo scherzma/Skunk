@@ -5,15 +5,23 @@ import (
 	"fmt"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/store"
 	"log"
 	"strings"
+	"sync"
 )
 
 type StorageSQLiteAdapter struct {
 	db *sql.DB
 }
 
-func NewStorageSQLiteAdapter(dbPath string) *StorageSQLiteAdapter {
+var (
+	instance *StorageSQLiteAdapter
+	once     sync.Once
+)
+
+// NewStorageSQLiteAdapter creates a new instance of StorageSQLiteAdapter and initializes the database
+func newStorageSQLiteAdapter(dbPath string) *StorageSQLiteAdapter {
 	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
 		log.Fatal(err)
@@ -26,53 +34,19 @@ func NewStorageSQLiteAdapter(dbPath string) *StorageSQLiteAdapter {
 	return adapter
 }
 
-func (a *StorageSQLiteAdapter) CreateTables() {
-	tables := []string{
-		`CREATE TABLE IF NOT EXISTS Chats (
-			chat_id varchar(1024) not null constraint Chats_pk primary key,
-			name varchar(40) not null
-		)`,
-		`CREATE TABLE IF NOT EXISTS Peers (
-			peer_id integer not null constraint Peers_pk primary key autoincrement,
-			public_key varchar(1024) not null,
-			address varchar(1024) not null
-		)`,
-		`CREATE TABLE IF NOT EXISTS ChatMembers (
-			chat_member_id integer not null constraint ChatMembers_pk primary key autoincrement,
-			date datetime not null,
-			peer_id varchar(1024) not null constraint ChatMembers_Peers_peer_id_fk references Peers on update cascade,
-			chat_id varchar(1024) not null constraint ChatMembers_Chats_chat_id_fk references Chats on update cascade,
-			username varchar(50)
-		)`,
-		`CREATE TABLE IF NOT EXISTS Messages (
-			message_id varchar(1024) not null constraint Messages_pk primary key,
-			content text,
-			date datetime not null,
-			operation integer not null,
-			sender_peer_id varchar(1024) not null constraint Messages_Peers_peer_id_fk references Peers on update cascade,
-			chat_id varchar(1024) not null constraint Messages_Chats_chat_id_fk references Chats on update cascade,
-			receiver_peer_id varchar(1024) not null constraint Messages_Peers_peer_id_fk_2 references Peers,
-			sender_address varchar(1024) not null,
-			receiver_address varchar(1024) not null
-		)`,
-		`CREATE TABLE IF NOT EXISTS Invitations (
-			invitation_id integer not null constraint Invitations_pk primary key autoincrement,
-			invitation_status integer not null,
-			message_id varchar(1024) not null constraint Invitations_Messages_message_id_fk references Messages
-		)`,
-		`CREATE TABLE IF NOT EXISTS PeersInInvitedChat (
-			public_key varchar(1024) not null,
-			invited_peer_id integer not null constraint PeersInInvitedChat_pk primary key autoincrement,
-			address varchar(1024) not null,
-			invitation_id integer not null constraint PeersInInvitedChat_Invitations_invitation_id_fk references Invitations
-		)`,
-	}
+// GetInstance returns the singleton instance of StorageSQLiteAdapter
+func GetInstance(dbPath string) *StorageSQLiteAdapter {
+	once.Do(func() {
+		instance = newStorageSQLiteAdapter(dbPath)
+	})
+	return instance
+}
 
-	for _, table := range tables {
-		_, err := a.db.Exec(table)
-		if err != nil {
-			log.Fatal(err)
-		}
+func (a *StorageSQLiteAdapter) CreateTables() {
+	sqlCommands := "CREATE TABLE IF NOT EXISTS Chats (\n    chat_id VARCHAR(1024) NOT NULL CONSTRAINT Chats_pk PRIMARY KEY,\n    name VARCHAR(40) NOT NULL\n);\n\nCREATE TABLE IF NOT EXISTS Peers (\n    peer_id INTEGER NOT NULL CONSTRAINT Peers_pk PRIMARY KEY AUTOINCREMENT,\n    public_key VARCHAR(1024) NOT NULL,\n    address VARCHAR(1024) NOT NULL\n);\n\nCREATE TABLE IF NOT EXISTS ChatMembers (\n    chat_member_id INTEGER NOT NULL CONSTRAINT ChatMembers_pk PRIMARY KEY AUTOINCREMENT,\n    date INTEGER NOT NULL,\n    peer_id VARCHAR(1024) NOT NULL CONSTRAINT ChatMembers_Peers_peer_id_fk REFERENCES Peers ON UPDATE CASCADE,\n    chat_id VARCHAR(1024) NOT NULL CONSTRAINT ChatMembers_Chats_chat_id_fk REFERENCES Chats ON UPDATE CASCADE,\n    username VARCHAR(50)\n);\n\nCREATE TABLE IF NOT EXISTS Messages (\n    message_id VARCHAR(1024) NOT NULL CONSTRAINT Messages_pk PRIMARY KEY,\n    content TEXT,\n    date INTEGER NOT NULL,\n    operation INTEGER NOT NULL,\n    sender_peer_id VARCHAR(1024) NOT NULL CONSTRAINT Messages_Peers_peer_id_fk REFERENCES Peers ON UPDATE CASCADE,\n    chat_id VARCHAR(1024) NOT NULL CONSTRAINT Messages_Chats_chat_id_fk REFERENCES Chats ON UPDATE CASCADE,\n    receiver_peer_id VARCHAR(1024) NOT NULL CONSTRAINT Messages_Peers_peer_id_fk_2 REFERENCES Peers,\n    sender_address VARCHAR(1024) NOT NULL,\n    receiver_address VARCHAR(1024) NOT NULL\n);\n\nCREATE TABLE IF NOT EXISTS Invitations (\n    invitation_id INTEGER NOT NULL CONSTRAINT Invitations_pk PRIMARY KEY AUTOINCREMENT,\n    invitation_status INTEGER NOT NULL,\n    message_id VARCHAR(1024) NOT NULL CONSTRAINT Invitations_Messages_message_id_fk REFERENCES Messages\n);\n\nCREATE TABLE IF NOT EXISTS PeersInInvitedChat (\n    public_key VARCHAR(1024) NOT NULL,\n    invited_peer_id INTEGER NOT NULL CONSTRAINT PeersInInvitedChat_pk PRIMARY KEY AUTOINCREMENT,\n    address VARCHAR(1024) NOT NULL,\n    invitation_id INTEGER NOT NULL CONSTRAINT PeersInInvitedChat_Invitations_invitation_id_fk REFERENCES Invitations\n);\n"
+	_, err := a.db.Exec(sqlCommands)
+	if err != nil {
+		log.Fatal(err)
 	}
 }
 
@@ -120,12 +94,7 @@ func (a *StorageSQLiteAdapter) CreateChat(chatID, name string) error {
 	return err
 }
 
-type PublicKeyAddress struct {
-	Address   string
-	PublicKey string
-}
-
-func (a *StorageSQLiteAdapter) InvitedToChat(messageID string, peers []PublicKeyAddress) error {
+func (a *StorageSQLiteAdapter) InvitedToChat(messageID string, peers []store.PublicKeyAddress) error {
 	tx, err := a.db.Begin()
 	if err != nil {
 		return err
@@ -160,7 +129,7 @@ func (a *StorageSQLiteAdapter) InvitedToChat(messageID string, peers []PublicKey
 	return err
 }
 
-func (a *StorageSQLiteAdapter) PeerGotInvitedToChat(peerID, chatID string) error {
+func (a *StorageSQLiteAdapter) PeerGotInvitedToChat(peerId string, chatId string) error {
 	// Implement the logic to store a peer getting invited to a chat in the database
 	// ...
 	return nil
@@ -261,7 +230,7 @@ func (a *StorageSQLiteAdapter) StoreMessage(message network.Message) error {
 
 	stmt, err := a.db.Prepare(`
         INSERT INTO Messages (message_id, date, content, sender_peer_id, receiver_peer_id, sender_address, receiver_address, chat_id, operation)
-        SELECT ?, datetime('now'), ?, (SELECT peer_id FROM Peers WHERE public_key = ?), (SELECT peer_id FROM Peers WHERE public_key = ?), ?, ?, ?, ?
+        SELECT ?, ?, ?, (SELECT peer_id FROM Peers WHERE public_key = ?), (SELECT peer_id FROM Peers WHERE public_key = ?), ?, ?, ?, ?
         WHERE NOT EXISTS (SELECT 1 FROM Messages WHERE message_id = ?)
     `)
 	if err != nil {
@@ -270,7 +239,7 @@ func (a *StorageSQLiteAdapter) StoreMessage(message network.Message) error {
 	defer stmt.Close()
 
 	_, err = stmt.Exec(
-		message.Id, message.Content, message.SenderID, message.ReceiverID,
+		message.Id, message.Timestamp, message.Content, message.SenderID, message.ReceiverID,
 		message.SenderAddress, message.ReceiverAddress, message.ChatID, message.Operation, message.Id,
 	)
 	return err
@@ -292,12 +261,16 @@ func (a *StorageSQLiteAdapter) insertPeerIfNotExists(publicKey, address string) 
 }
 
 func (a *StorageSQLiteAdapter) RetrieveMessage(messageID string) (network.Message, error) {
-	row := a.db.QueryRow("SELECT * FROM Messages WHERE message_id = ?", messageID)
+	row := a.db.QueryRow(`
+		SELECT m.message_id, m.date, m.content, m.operation, p.public_key, p2.public_key, m.sender_address, m.receiver_address, m.chat_id
+		FROM Messages m, Peers p, Peers p2
+		WHERE message_id = ? AND m.sender_peer_id = p.peer_id AND m.receiver_peer_id = p2.peer_id
+	`, messageID)
 
 	var message network.Message
 	err := row.Scan(
-		&message.Id, &message.Content, &message.Timestamp, &message.Operation, &message.SenderID, &message.ChatID, &message.ReceiverID,
-		&message.SenderAddress, &message.ReceiverAddress,
+		&message.Id, &message.Timestamp, &message.Content, &message.Operation, &message.SenderID, &message.ReceiverID,
+		&message.SenderAddress, &message.ReceiverAddress, &message.ChatID,
 	)
 	if err != nil {
 		return network.Message{}, err
@@ -391,9 +364,9 @@ func (a *StorageSQLiteAdapter) GetPeers() ([]string, error) {
 
 func (a *StorageSQLiteAdapter) GetChatMessages(chatID string) ([]network.Message, error) {
 	rows, err := a.db.Query(`
-		SELECT message_id, content, date, operation, sender_peer_id, chat_id, receiver_peer_id, sender_address, receiver_address
-		FROM Messages
-		WHERE chat_id = ?
+		SELECT m.message_id, m.content, m.date, m.operation, p.public_key, m.chat_id, p2.public_key, m.sender_address, m.receiver_address
+		FROM Messages m, Peers p, Peers p2
+		WHERE chat_id = ? AND m.sender_peer_id = p.peer_id AND m.receiver_peer_id = p2.peer_id
 	`, chatID)
 	if err != nil {
 		return nil, err

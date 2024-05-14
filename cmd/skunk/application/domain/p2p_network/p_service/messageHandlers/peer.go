@@ -2,6 +2,7 @@ package messageHandlers
 
 import (
 	"errors"
+	"github.com/scherzma/Skunk/cmd/skunk/adapter/out/storage/storageSQLiteAdapter"
 	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_model"
 	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_service"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
@@ -29,7 +30,7 @@ func GetPeerInstance() *Peer {
 			network.SYNC_RESPONSE:  &SyncResponseHandler{},
 			network.SET_USERNAME:   &SetUsernameHandler{},
 			network.SEND_MESSAGE:   &SendMessageHandler{},
-			network.INVITE_TO_CHAT: &InviteToChatHandler{},
+			network.INVITE_TO_CHAT: NewInviteToChatHandler(nil, storageSQLiteAdapter.GetInstance("test.db")),
 			network.LEAVE_CHAT:     &LeaveChatHandler{},
 			network.TEST_MESSAGE:   &TestMessageHandler{},
 			network.TEST_MESSAGE_2: &TestMessageHandler2{},
@@ -67,6 +68,8 @@ func (p *Peer) Notify(message network.Message) error {
 			return errors.New("invalid message")
 		}
 
+		storage := storageSQLiteAdapter.GetInstance("test.db")
+		storage.StoreMessage(message)
 		return handler.HandleMessage(message)
 	}
 	return errors.New("invalid message operation")

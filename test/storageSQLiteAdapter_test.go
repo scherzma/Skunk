@@ -1,29 +1,18 @@
-package main
+package test
 
 import (
 	"fmt"
 	"github.com/scherzma/Skunk/cmd/skunk/adapter/out/storage/storageSQLiteAdapter"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+	"os"
 	"reflect"
+	"testing"
 )
 
-/*
-type Message struct {
-	Id              string
-	Timestamp       int64
-	Content         string
-	SenderID        string
-	ReceiverID      string
-	SenderAddress   string
-	ReceiverAddress string
-	ChatID          string
-	Operation       OperationType
-}
-*/
-
-func main() {
-
+func TestStorageSQLiteAdapter(t *testing.T) {
+	// Create a temporary database for testing
 	dbPath := "test.db"
+	defer os.Remove(dbPath)
 
 	adapter := storageSQLiteAdapter.NewStorageSQLiteAdapter(dbPath)
 
@@ -144,51 +133,48 @@ func main() {
 	for _, msg := range testMessages {
 		err := adapter.StoreMessage(msg)
 		if err != nil {
-			fmt.Printf("Error storing message: %v", err)
+			t.Errorf("Error storing message: %v", err)
 		}
 	}
 
 	fmt.Println("Messages stored")
-
 	// Retrieve the messages and compare
 	for _, msg := range testMessages {
 		retrieved, err := adapter.RetrieveMessage(msg.Id)
 		if err != nil {
-			fmt.Printf("Error retrieving message: %v", err)
+			t.Errorf("Error retrieving message: %v", err)
 		}
-
-		fmt.Println("storedccc ", msg)
-		fmt.Println("retrieved ", retrieved)
+		fmt.Println(retrieved)
+		fmt.Println(msg)
 		if !reflect.DeepEqual(msg, retrieved) {
-			fmt.Printf("Retrieved message does not match stored message\n")
+			t.Errorf("Retrieved message does not match stored message")
 		}
 	}
-
-	fmt.Println("Messages retrieved")
 
 	// Test GetChatMessages
 	chatMessages, err := adapter.GetChatMessages("chat1")
 	if err != nil {
-		fmt.Printf("Error getting chat messages: %v", err)
+		t.Errorf("Error getting chat messages: %v", err)
 	}
 
 	if len(chatMessages) != len(testMessages) {
-		fmt.Printf("Expected %d chat messages, got %d", len(testMessages), len(chatMessages))
+		t.Errorf("Expected %d chat messages, got %d", len(testMessages), len(chatMessages))
 	}
 
 	// Test SetPeerUsername
 	err = adapter.SetPeerUsername("CoolUser1", "user1", "chat1")
 	if err != nil {
-		fmt.Printf("Error setting peer username: %v", err)
+		t.Errorf("Error setting peer username: %v", err)
 	}
 
 	username, err := adapter.GetUsername("user1", "chat1")
 	if err != nil {
-		fmt.Printf("Error getting username: %v", err)
+		t.Errorf("Error getting username: %v", err)
 	}
 
 	if username != "CoolUser1" {
-		fmt.Printf("Expected username 'CoolUser1', got '%s'", username)
+		t.Errorf("Expected username 'CoolUser1', got '%s'", username)
 	}
 
+	// Additional tests can be added for other methods...
 }

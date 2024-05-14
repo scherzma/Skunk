@@ -5,14 +5,23 @@ import (
 	"fmt"
 	"github.com/scherzma/Skunk/cmd/skunk/application/domain/chat"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/store"
 )
 
 // This Peer gets invited to a chat
-type InviteToChatHandler struct {
-	userChatLogic chat.ChatLogic
+type inviteToChatHandler struct {
+	userChatLogic         chat.ChatLogic
+	chatInvitationStorage store.ChatInvitationStoragePort
 }
 
-func (i *InviteToChatHandler) HandleMessage(message network.Message) error {
+func NewInviteToChatHandler(userChatLogic chat.ChatLogic, chatInvitationStorage store.ChatInvitationStoragePort) *inviteToChatHandler {
+	return &inviteToChatHandler{
+		userChatLogic:         userChatLogic,
+		chatInvitationStorage: chatInvitationStorage,
+	}
+}
+
+func (i *inviteToChatHandler) HandleMessage(message network.Message) error {
 
 	// Structure of the message:
 	/*
@@ -38,9 +47,12 @@ func (i *InviteToChatHandler) HandleMessage(message network.Message) error {
 		return err
 	}
 
-	i.userChatLogic.ReceiveChatInvitation(message.FromUser, content.ChatID, content.ChatName, content.Peers)
-	//TODO store received chat invitation for later use
-	// For example: if the user wants to join the chat
+	err = i.chatInvitationStorage.InvitedToChat(message.Id, []store.PublicKeyAddress{{Address: content.ChatName}})
+	if err != nil {
+		return err
+	}
+
+	i.userChatLogic.ReceiveChatInvitation(message.SenderID, content.ChatID, content.ChatName, content.Peers)
 
 	return nil
 }

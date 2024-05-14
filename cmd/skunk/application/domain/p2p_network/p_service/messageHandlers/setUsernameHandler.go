@@ -30,7 +30,7 @@ func (s *SetUsernameHandler) HandleMessage(message network.Message) error {
 		return err
 	}
 
-	s.userChatLogic.PeerSetsUsername(message.FromUser, message.ChatID, content.Username)
+	s.userChatLogic.PeerSetsUsername(message.SenderID, message.ChatID, content.Username)
 
 	return nil
 }

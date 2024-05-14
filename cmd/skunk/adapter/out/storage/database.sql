@@ -20,7 +20,7 @@ create table ChatMembers
     chat_member_id integer       not null
         constraint ChatMembers_pk
             primary key autoincrement,
-    date           datetime      not null,
+    timestamp      integer       not null,
     peer_id        varchar(1024) not null
         constraint ChatMembers_Peers_peer_id_fk
             references Peers
@@ -38,7 +38,7 @@ create table Messages
         constraint Messages_pk
             primary key,
     content          text,
-    date             datetime      not null,
+    timestamp        integer       not null,
     operation        integer       not null,
     sender_peer_id   varchar(1024) not null
         constraint Messages_Peers_peer_id_fk

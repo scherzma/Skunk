@@ -18,7 +18,7 @@ func TestStartTor(t *testing.T) {
 		LocalPort:            "1111",
 		RemotePort:           "2222",
 		DeleteDataDirOnClose: true,
-		UseEmbedded:          true,
+		UseEmbedded:          false,
 	}
 	myTor, err := tor.NewTor(conf)
 	assert.NoError(t, err)
@@ -36,7 +36,7 @@ func TestStartHiddenService(t *testing.T) {
 		LocalPort:            "3333",
 		RemotePort:           "4444",
 		DeleteDataDirOnClose: true,
-		UseEmbedded:          true,
+		UseEmbedded:          false,
 	}
 	myTor, err := tor.NewTor(conf)
 	assert.NoError(t, err)
@@ -64,7 +64,7 @@ func TestStopTor(t *testing.T) {
 		LocalPort:            "5555",
 		RemotePort:           "6666",
 		DeleteDataDirOnClose: true,
-		UseEmbedded:          true,
+		UseEmbedded:          false,
 	}
 	myTor, err := tor.NewTor(conf)
 	assert.NoError(t, err)
@@ -90,7 +90,7 @@ func TestReusePrivateKeyTor(t *testing.T) {
 		RemotePort:           "4321",
 		DeleteDataDirOnClose: false,
 		ReusePrivateKey:      true,
-		UseEmbedded:          true,
+		UseEmbedded:          false,
 	}
 	myTor, err := tor.NewTor(conf)
 	assert.NoError(t, err)
@@ -117,7 +117,7 @@ func TestReusePrivateKeyTor(t *testing.T) {
 		RemotePort:           "1010",
 		DeleteDataDirOnClose: true,
 		ReusePrivateKey:      true,
-		UseEmbedded:          true,
+		UseEmbedded:          false,
 	}
 	myTor, err = tor.NewTor(conf)
 	assert.NoError(t, err)

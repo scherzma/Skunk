@@ -30,7 +30,7 @@ func (s *SendMessageHandler) HandleMessage(message network.Message) error {
 		return err
 	}
 
-	s.userChatLogic.RecieveMessage(message.FromUser, message.ChatID, content.Message)
+	s.userChatLogic.RecieveMessage(message.SenderID, message.ChatID, content.Message)
 
 	return nil
 }

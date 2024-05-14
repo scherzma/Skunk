@@ -57,22 +57,28 @@ func (s *SyncRequestHandler) HandleMessage(message network.Message) error {
 
 	// Send the sync response to the other peer
 	syncResponse := network.Message{
-		Id:        uuid.New().String(),
-		Timestamp: time.Now().UnixNano(),
-		Content:   string(externalMessagesBytes),
-		FromUser:  chatMessageRepo.GetUsername(),
-		ChatID:    message.ChatID,
-		Operation: network.SYNC_RESPONSE,
+		Id:              uuid.New().String(),
+		Timestamp:       time.Now().UnixNano(),
+		Content:         string(externalMessagesBytes),
+		SenderID:        chatMessageRepo.GetUsername(), // TODO: change
+		ReceiverID:      message.SenderID,              // TODO: change
+		SenderAddress:   message.SenderAddress,         // TODO: change
+		ReceiverAddress: message.ReceiverAddress,       // TODO: change
+		ChatID:          message.ChatID,
+		Operation:       network.SYNC_RESPONSE,
 	}
 
 	// Send sync request to other peer to get the difference between the messages that the other peer knows this peer does not know
 	syncRequest := network.Message{
-		Id:        uuid.New().String(),
-		Timestamp: time.Now().UnixNano(),
-		Content:   string(internalMessagesBytes),
-		FromUser:  chatMessageRepo.GetUsername(),
-		ChatID:    message.ChatID,
-		Operation: network.SYNC_REQUEST,
+		Id:              uuid.New().String(),
+		Timestamp:       time.Now().UnixNano(),
+		Content:         string(internalMessagesBytes),
+		SenderID:        chatMessageRepo.GetUsername(),
+		ReceiverID:      message.ReceiverID,
+		SenderAddress:   message.SenderAddress,
+		ReceiverAddress: message.ReceiverAddress,
+		ChatID:          message.ChatID,
+		Operation:       network.SYNC_REQUEST,
 	}
 
 	peer := GetPeerInstance()
