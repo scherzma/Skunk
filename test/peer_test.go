@@ -2,7 +2,6 @@ package test
 
 import (
 	"context"
-	"fmt"
 	"testing"
 	"time"
 
@@ -182,12 +181,12 @@ func TestPeerWriteMessage(t *testing.T) {
 		input string
 		want  string
 	}{
-		{"numbers", "1234567890", fmt.Sprintf("From %s: 1234567890", peer2.Address)},
-		{"LETTERS", "ABCDEFGHIZ", fmt.Sprintf("From %s: ABCDEFGHIZ", peer2.Address)},
-		{"letters", "abcdefghiz", fmt.Sprintf("From %s: abcdefghiz", peer2.Address)},
-		{"special", "!?({&=$-:,", fmt.Sprintf("From %s: !?({&=$-:,", peer2.Address)},
-		{"weird", "\t\n\r¬² ", fmt.Sprintf("From %s: \t\n\r¬² ", peer2.Address)},
-		{"mixture", "abc123ABC!", fmt.Sprintf("From %s: abc123ABC!", peer2.Address)},
+		{"numbers", "1234567890", "1234567890"},
+		{"LETTERS", "ABCDEFGHIZ", "ABCDEFGHIZ"},
+		{"letters", "abcdefghiz", "abcdefghiz"},
+		{"special", "!?({&=$-:,", "!?({&=$-:,"},
+		{"weird", "\t\n\r¬² ", "\t\n\r¬² "},
+		{"mixture", "abc123ABC!", "abc123ABC!"},
 	}
 
 	for _, tt := range tests {
@@ -272,9 +271,6 @@ func TestPeerTor(t *testing.T) {
 
 	onionTwo, err := myTorTwo.StartHiddenService()
 	assert.NoError(t, err)
-
-	// wait for the hidden service to be published completely
-	time.Sleep(10 * time.Second)
 
 	peerInstanceTwo, _ := peer.NewPeer(onionTwo.ID+".onion", "2221", "2222", "127.0.0.1:9053")
 	defer peerInstanceTwo.Shutdown()

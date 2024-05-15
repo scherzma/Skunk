@@ -123,15 +123,13 @@ func (p *Peer) Listen(l net.Listener) {
 
 	// Shuts down server when quitch gets closed
 	go func() {
-		select {
-		case <-p.quitch:
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		<-p.quitch
+        shutdownCtx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+        defer cancel()
 
-			if err := srv.Shutdown(shutdownCtx); err != nil {
-				log.Printf("HTTP server shutdown failed: %v", err)
-			}
-			defer cancel()
-		}
+        if err := srv.Shutdown(shutdownCtx); err != nil {
+            log.Printf("HTTP server shutdown failed: %v", err)
+        }
 	}()
 }
 
@@ -218,16 +216,23 @@ func (p *Peer) readMessage(conn *websocket.Conn, address string) (string, error)
 
 // ReadMessages starts readMessage for every conn in readConns in the readRate interval.
 func (p *Peer) ReadMessages(messageCh chan<- string, errorCh chan<- error) {
+    var wg sync.WaitGroup
+
 	ticker := time.NewTicker(readRateInterval)
 	go func() {
-		defer close(messageCh)
-		defer close(errorCh)
+        defer func() {
+            wg.Wait()
+            close(messageCh)
+            close(errorCh)
+        }()
 		for {
 			select {
 			case <-ticker.C:
 				p.mapRWLock.RLock()
 				for addr, conn := range p.readConns {
-					go func() {
+                    wg.Add(1)
+					go func(conn *websocket.Conn, addr string) {
+                        defer wg.Done()
 						msg, err := p.readMessage(conn, addr)
 						if err != nil {
 							// encode address as error so that we know which peer is offline
@@ -238,7 +243,7 @@ func (p *Peer) ReadMessages(messageCh chan<- string, errorCh chan<- error) {
 							// connection being closed.
 							messageCh <- msg
 						}
-					}()
+					}(conn, addr)
 				}
 				p.mapRWLock.RUnlock()
 			case <-p.quitch:
