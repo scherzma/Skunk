@@ -18,10 +18,10 @@ const (
 	MaxConns         = 64                          // MaxConns defines the maximum number of concurrent websocket connections allowed.
 	connWait         = 1 * time.Minute             // connWait specifies the timeout for connecting to another peer.
 	writeWait        = 20 * time.Second            // writeWait specifies the timeout for writing to another peer. has to be high when running over tor
-	shutdownWait     = 0 * time.Second             // shutdownWait specifies the wait time for shutting down the HTTP server. (optional for later)
-	readRateInterval = 2 * time.Second             // readRateInterval specifies the rate at which it will it is tried to read a message from every connection.
+	shutdownWait     = 1 * time.Second             // shutdownWait specifies the wait time for shutting down the HTTP server. (optional for later)
+	readRateInterval = 3 * time.Second             // readRateInterval specifies the rate at which it will it is tried to read a message from every connection.
 	readWait         = (readRateInterval * 9) / 10 // readWait specifies the time for trying to read a message from a connection. Needs to be less than readRateInterval
-	maxMessageSize   = 512                         // maxMessageSize defines the maximum message size allowed from peer. (bytes)
+	maxMessageSize   = 10000                       // maxMessageSize defines the maximum message size allowed from peer. (bytes)
 )
 
 var upgrader = websocket.Upgrader{
@@ -124,12 +124,12 @@ func (p *Peer) Listen(l net.Listener) {
 	// Shuts down server when quitch gets closed
 	go func() {
 		<-p.quitch
-        shutdownCtx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-        defer cancel()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownWait)
+		defer cancel()
 
-        if err := srv.Shutdown(shutdownCtx); err != nil {
-            log.Printf("HTTP server shutdown failed: %v", err)
-        }
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			log.Printf("HTTP server shutdown failed: %v", err)
+		}
 	}()
 }
 
@@ -188,7 +188,7 @@ func (p *Peer) Connect(address string) error {
 	return p.handleNewConnection(c, address)
 }
 
-// ReadMessage attempts to read a single message from the specified websocket connection.
+// readMessage attempts to read a single message from the specified websocket connection.
 // It locks the readMutex to ensure exclusive access to the connection during the read operation.
 func (p *Peer) readMessage(conn *websocket.Conn, address string) (string, error) {
 	if conn == nil {
@@ -207,6 +207,7 @@ func (p *Peer) readMessage(conn *websocket.Conn, address string) (string, error)
 			return "", err
 			// every other error gets ignored
 		} else {
+			fmt.Println("Read error: ", err)
 			return "", nil
 		}
 	}
@@ -216,31 +217,30 @@ func (p *Peer) readMessage(conn *websocket.Conn, address string) (string, error)
 
 // ReadMessages starts readMessage for every conn in readConns in the readRate interval.
 func (p *Peer) ReadMessages(messageCh chan<- string, errorCh chan<- error) {
-    var wg sync.WaitGroup
+	var wg sync.WaitGroup
 
 	ticker := time.NewTicker(readRateInterval)
 	go func() {
-        defer func() {
-            wg.Wait()
-            close(messageCh)
-            close(errorCh)
-        }()
+		defer func() {
+			wg.Wait()
+			close(messageCh)
+			close(errorCh)
+		}()
 		for {
 			select {
 			case <-ticker.C:
 				p.mapRWLock.RLock()
 				for addr, conn := range p.readConns {
-                    wg.Add(1)
+					wg.Add(1)
 					go func(conn *websocket.Conn, addr string) {
-                        defer wg.Done()
+						defer wg.Done()
 						msg, err := p.readMessage(conn, addr)
 						if err != nil {
 							// encode address as error so that we know which peer is offline
 							errOffline := errors.New(addr)
 							errorCh <- errOffline
 						} else if msg != "" { // "" can happen when an error occurs when reading from
-							// the connection but the error is not due to the
-							// connection being closed.
+							// the conn but the error is not due to the conn being closed.
 							messageCh <- msg
 						}
 					}(conn, addr)
@@ -306,8 +306,8 @@ func (p *Peer) handler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := p.handleNewConnection(conn, r.Header.Get("X-Peer-Address")); err != nil {
-		log.Printf("failed to handle new connection: %v", err)
-		conn.Close() // TO-DO: Send and handle error that the peer reached its maximum of connections.
+		fmt.Printf("failed to handle new connection: %v", err)
+		conn.Close()
 	}
 }
 

@@ -1,9 +1,10 @@
 package networkAdapter
 
 import (
+	"encoding/json"
 	"fmt"
-    "encoding/json"
 	"sync"
+	"time"
 
 	cretztor "github.com/cretz/bine/tor"
 
@@ -18,9 +19,9 @@ const (
 	SocksPort            = "9055"
 	LocalPort            = "1111"
 	RemotePort           = "2222"
-	ReusePrivateKey      = true // Reuse private key for constant onion address
+	ReusePrivateKey      = true // reuse private key for constant onion address
 	DeleteDataDirOnClose = false
-	UseEmbedded          = true // Use embedded tor process
+	UseEmbedded          = true // use embedded tor process
 )
 
 var (
@@ -167,17 +168,18 @@ func (n *NetworkAdapter) readNetworkMessages() {
 	for {
 		select {
 		case msg, ok := <-messageCh:
+			fmt.Println("WE ARE READING MESSAGE: ", msg)
 			if !ok {
 				return
 			}
-            message := network.Message{}
-            err := json.Unmarshal([]byte(msg), &message)
-            if err != nil {
-                continue // optionally we could handle incorrect formatted messages
-            }
-            fmt.Println(message)
-            n.SendNetworkMessageToSubscriber(message)
+			message := network.Message{}
+			err := json.Unmarshal([]byte(msg), &message)
+			if err != nil {
+				continue // optionally we could handle incorrect formatted messages
+			}
+			n.SendNetworkMessageToSubscriber(message)
 		case err, ok := <-errorCh:
+			fmt.Println("WE ARE READING ERROR: ", err)
 			if !ok {
 				return
 			}
@@ -232,7 +234,9 @@ func startPeer(onionService *cretztor.OnionService) (*peer.Peer, error) {
 	if err != nil {
 		return nil, err
 	}
-    peerInstance.Listen(onionService)
+	peerInstance.Listen(onionService)
+
+	time.Sleep(1 * time.Second)
 
 	return peerInstance, err
 }

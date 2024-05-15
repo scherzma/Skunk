@@ -1,7 +1,7 @@
 package test
 
 import (
-    "fmt"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -28,7 +28,7 @@ func TestNetworkAdapterSendMessage(t *testing.T) {
 		ChatID:    "1",
 		Operation: network.TEST_MESSAGE,
 	}
-	testMessageJson, err := util.JsonEncode(testMessage)
+	testMessageJson, _ := json.Marshal(testMessage)
 
 	peerInstance := messageHandlers.GetPeerInstance()
 	networkConnection := networkAdapter.NewAdapter()
@@ -47,8 +47,6 @@ func TestNetworkAdapterSendMessage(t *testing.T) {
 	torInstance.StartTor()
 	onion, _ := torInstance.StartHiddenService()
 
-	time.Sleep(10 * time.Second)
-
 	peerNetworkInstance, _ := peer.NewPeer(onion.ID+".onion", "1110", "2220", "127.0.0.1:9052")
 	defer peerNetworkInstance.Shutdown()
 
@@ -60,15 +58,15 @@ func TestNetworkAdapterSendMessage(t *testing.T) {
 
 	go peerNetworkInstance.ReadMessages(messageCh, errorCh)
 
-	err = peerInstance.SendMessageToNetworkPeer(peerNetworkInstance.Address, testMessage)
+	err := peerInstance.SendMessageToNetworkPeer(peerNetworkInstance.Address, testMessage)
 	assert.NoError(t, err)
 
-	time.Sleep(10 * time.Second)
+	time.Sleep(20 * time.Second)
 
 	select {
 	case msg := <-messageCh:
 		t.Log(msg)
-		assert.Equal(t, testMessageJson, msg)
+		assert.Equal(t, string(testMessageJson), msg)
 	case err := <-errorCh:
 		assert.NoError(t, err)
 	default:
@@ -76,6 +74,7 @@ func TestNetworkAdapterSendMessage(t *testing.T) {
 	}
 
 	torInstance.StopTor()
+	time.Sleep(1 * time.Second)
 	peerInstance.RemoveNetworkConnection(networkConnection)
 }
 
@@ -88,7 +87,7 @@ func TestNetworkAdapterReceiveMessage(t *testing.T) {
 		FromUser:  "Bob",
 		Operation: network.NETWORK_ONLINE,
 	}
-	testMessageJson, err := util.JsonEncode(testMessage)
+	testMessageJson, _ := json.Marshal(testMessage)
 
 	peerInstance := messageHandlers.GetPeerInstance()
 	networkConnection := networkAdapter.NewAdapter()
@@ -107,27 +106,26 @@ func TestNetworkAdapterReceiveMessage(t *testing.T) {
 	torInstance.StartTor()
 	onion, _ := torInstance.StartHiddenService()
 
-	time.Sleep(10 * time.Second)
-
 	peerNetworkInstance, _ := peer.NewPeer(onion.ID+".onion", "3330", "4440", "127.0.0.1:9053")
-
 	peerNetworkInstance.Listen(onion)
 	defer peerNetworkInstance.Shutdown()
+
 	time.Sleep(1 * time.Second)
 
-    fmt.Println(peerInstance.Address)
-	err = peerNetworkInstance.Connect(peerInstance.Address)
+	err := peerNetworkInstance.Connect(peerInstance.Address)
 	assert.NoError(t, err)
 
 	err = peerNetworkInstance.SetWriteConn(peerInstance.Address)
 	assert.NoError(t, err)
 
-	err = peerNetworkInstance.WriteMessage(testMessageJson)
+	err = peerNetworkInstance.WriteMessage(string(testMessageJson))
 	assert.NoError(t, err)
-	time.Sleep(10 * time.Second)
+
+	time.Sleep(1 * time.Minute)
 
 	assert.Equal(t, "ws://testworked.onion:1111", peerInstance.Address)
 
 	torInstance.StopTor()
+	time.Sleep(1 * time.Second)
 	peerInstance.RemoveNetworkConnection(networkConnection)
 }
