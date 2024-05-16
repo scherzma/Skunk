@@ -168,7 +168,6 @@ func (n *NetworkAdapter) readNetworkMessages() {
 	for {
 		select {
 		case msg, ok := <-messageCh:
-			fmt.Println("WE ARE READING MESSAGE: ", msg)
 			if !ok {
 				return
 			}
@@ -179,7 +178,6 @@ func (n *NetworkAdapter) readNetworkMessages() {
 			}
 			n.SendNetworkMessageToSubscriber(message)
 		case err, ok := <-errorCh:
-			fmt.Println("WE ARE READING ERROR: ", err)
 			if !ok {
 				return
 			}

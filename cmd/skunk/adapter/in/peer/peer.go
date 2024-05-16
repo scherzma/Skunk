@@ -15,13 +15,12 @@ import (
 )
 
 const (
-	MaxConns         = 64                          // MaxConns defines the maximum number of concurrent websocket connections allowed.
-	connWait         = 1 * time.Minute             // connWait specifies the timeout for connecting to another peer.
-	writeWait        = 20 * time.Second            // writeWait specifies the timeout for writing to another peer. has to be high when running over tor
-	shutdownWait     = 1 * time.Second             // shutdownWait specifies the wait time for shutting down the HTTP server. (optional for later)
-	readRateInterval = 3 * time.Second             // readRateInterval specifies the rate at which it will it is tried to read a message from every connection.
-	readWait         = (readRateInterval * 9) / 10 // readWait specifies the time for trying to read a message from a connection. Needs to be less than readRateInterval
-	maxMessageSize   = 10000                       // maxMessageSize defines the maximum message size allowed from peer. (bytes)
+	MaxConns         = 64               // MaxConns defines the maximum number of concurrent websocket connections allowed.
+	connWait         = 1 * time.Minute  // connWait specifies the timeout for connecting to another peer.
+	writeWait        = 20 * time.Second // writeWait specifies the timeout for writing to another peer. has to be high when running over tor
+	shutdownWait     = 1 * time.Second  // shutdownWait specifies the wait time for shutting down the HTTP server. (optional for later)
+	readRateInterval = 3 * time.Second  // readRateInterval specifies the rate at which it will it is tried to read a message from every connection.
+	maxMessageSize   = 10000            // maxMessageSize defines the maximum message size allowed from peer. (bytes)
 )
 
 var upgrader = websocket.Upgrader{
@@ -196,7 +195,7 @@ func (p *Peer) readMessage(conn *websocket.Conn, address string) (string, error)
 	}
 
 	conn.SetReadLimit(maxMessageSize)
-	conn.SetReadDeadline(time.Now().Add(readWait))
+	conn.SetReadDeadline(time.Now().Add(readRateInterval))
 	p.readMutex.Lock()
 	_, messageBytes, err := conn.ReadMessage()
 	p.readMutex.Unlock()
@@ -207,7 +206,6 @@ func (p *Peer) readMessage(conn *websocket.Conn, address string) (string, error)
 			return "", err
 			// every other error gets ignored
 		} else {
-			fmt.Println("Read error: ", err)
 			return "", nil
 		}
 	}
