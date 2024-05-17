@@ -81,7 +81,7 @@ func TestNetworkAdapterReceiveMessage(t *testing.T) {
 	testMessage := network.Message{
 		Id:        util.UUID(),
 		Timestamp: util.CurrentTimeMillis(),
-		Content:   "ws://testworked.onion:1111",
+		Content:   `"ws://testworked.onion:1111"`
 		FromUser:  "Bob",
 		Operation: network.NETWORK_ONLINE,
 	}
