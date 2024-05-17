@@ -105,17 +105,17 @@ func (p *Peer) Listen(l net.Listener) {
 		Handler: mux,
 	}
 
-    if l != nil {
-        // use the provided listener
-        go srv.Serve(l)
-    } else {
-        // listen on the specified port if no listener is provided
-        listener, err := net.Listen("tcp", ":" + p.Port)
-        if err != nil {
-            log.Printf("HTTP server listen failed: %v", err)
-        }
-        go srv.Serve(listener)
-    }
+	if l != nil {
+		// use the provided listener
+		go srv.Serve(l)
+	} else {
+		// listen on the specified port if no listener is provided
+		listener, err := net.Listen("tcp", ":"+p.Port)
+		if err != nil {
+			log.Printf("HTTP server listen failed: %v", err)
+		}
+		go srv.Serve(listener)
+	}
 
 	// shuts down server when quitch gets closed
 	go func() {
@@ -212,10 +212,12 @@ func (p *Peer) readMessage(conn *websocket.Conn, address string) (string, error)
 
 // ReadMessages starts readMessage for every conn in readConns in the readRate interval.
 func (p *Peer) ReadMessages(messageCh chan<- string, errorCh chan<- error) {
+	// WaitGroup is needed to ensure that we only close the channels when we have finished reading from every connection
 	var wg sync.WaitGroup
 
 	ticker := time.NewTicker(readRateInterval)
 	go func() {
+		// close channels when server shuts down and reading from every channel has finished.
 		defer func() {
 			wg.Wait()
 			close(messageCh)
@@ -224,12 +226,14 @@ func (p *Peer) ReadMessages(messageCh chan<- string, errorCh chan<- error) {
 		for {
 			select {
 			case <-ticker.C:
+				// try to read from every connection
 				p.mapRWLock.RLock()
 				for addr, conn := range p.readConns {
 					wg.Add(1)
 					go func(conn *websocket.Conn, addr string) {
 						defer wg.Done()
 						msg, err := p.readMessage(conn, addr)
+						// this error occurs when a peer is offline
 						if err != nil {
 							// encode address as error so that we know which peer is offline
 							errOffline := errors.New(addr)
@@ -241,6 +245,7 @@ func (p *Peer) ReadMessages(messageCh chan<- string, errorCh chan<- error) {
 					}(conn, addr)
 				}
 				p.mapRWLock.RUnlock()
+				// stop reading from connections when server shuts down
 			case <-p.quitch:
 				ticker.Stop()
 				return
