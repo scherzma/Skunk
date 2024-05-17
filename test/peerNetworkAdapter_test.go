@@ -51,7 +51,6 @@ func TestNetworkAdapterSendMessage(t *testing.T) {
 	defer peerNetworkInstance.Shutdown()
 
 	peerNetworkInstance.Listen(onion)
-	time.Sleep(1 * time.Second)
 
 	messageCh := make(chan string)
 	errorCh := make(chan error)
@@ -74,7 +73,6 @@ func TestNetworkAdapterSendMessage(t *testing.T) {
 	}
 
 	torInstance.StopTor()
-	time.Sleep(1 * time.Second)
 	peerInstance.RemoveNetworkConnection(networkConnection)
 }
 
@@ -110,8 +108,6 @@ func TestNetworkAdapterReceiveMessage(t *testing.T) {
 	peerNetworkInstance.Listen(onion)
 	defer peerNetworkInstance.Shutdown()
 
-	time.Sleep(1 * time.Second)
-
 	err := peerNetworkInstance.Connect(peerInstance.Address)
 	assert.NoError(t, err)
 
@@ -126,6 +122,5 @@ func TestNetworkAdapterReceiveMessage(t *testing.T) {
 	assert.Equal(t, "ws://testworked.onion:1111", peerInstance.Address)
 
 	torInstance.StopTor()
-	time.Sleep(1 * time.Second)
 	peerInstance.RemoveNetworkConnection(networkConnection)
 }
