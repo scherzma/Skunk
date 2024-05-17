@@ -31,7 +31,6 @@ func TestListen(t *testing.T) {
 	assert.NoError(t, err)
 
 	peerInstance.Listen(nil)
-	time.Sleep(waitTime)
 
 	// Connecting to peer address should work
 	conn, _, err := websocket.Dial(context.Background(), "ws://127.0.0.1:8080", nil)
@@ -49,7 +48,6 @@ func TestConnect(t *testing.T) {
 
 	peer1.Listen(nil)
 	peer2.Listen(nil)
-	time.Sleep(waitTime)
 
 	// First connect from peer1 to peer2.
 	err = peer1.Connect(peer2.Address)
@@ -79,7 +77,6 @@ func TestPeerSetWriteConn(t *testing.T) {
 	defer peer2.Shutdown()
 
 	peer1.Listen(nil)
-	time.Sleep(waitTime)
 
 	err := peer2.Connect(peer1.Address)
 	time.Sleep(waitTime)
@@ -114,7 +111,6 @@ func TestPeerReadMessages(t *testing.T) {
 	defer peer5.Shutdown()
 
 	peer1.Listen(nil)
-	time.Sleep(1 * time.Second)
 
 	address := peer1.Address
 	peer2.Connect(address)
@@ -167,7 +163,6 @@ func TestPeerWriteMessage(t *testing.T) {
 	defer peer2.Shutdown()
 
 	peer1.Listen(nil)
-	time.Sleep(1 * time.Second)
 
 	peer2.Connect(peer1.Address)
 	peer2.SetWriteConn(peer1.Address)
@@ -208,7 +203,6 @@ func TestPeerShutdown(t *testing.T) {
 	defer peerInstance.Shutdown()
 
 	peerInstance.Listen(nil)
-	time.Sleep(waitTime)
 
 	peerInstance.Shutdown()
 
@@ -217,7 +211,6 @@ func TestPeerShutdown(t *testing.T) {
 	assert.Error(t, err)
 
 	peerInstance.Listen(nil)
-	time.Sleep(waitTime)
 
 	// After executing Listen you should be able to connect to the peer again
 	conn, _, err := websocket.Dial(context.Background(), "ws://127.0.0.1:1111", nil)
@@ -252,7 +245,6 @@ func TestPeerTor(t *testing.T) {
 	defer peerInstanceOne.Shutdown()
 
 	peerInstanceOne.Listen(onionOne)
-	time.Sleep(1 * waitTime)
 
 	// starts the embedded version of tor
 	conf = &tor.TorConfig{

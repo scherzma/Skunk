@@ -99,28 +99,25 @@ func (p *Peer) Listen(l net.Listener) {
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", p.handler) // Registers the main handler.
+	mux.HandleFunc("/", p.handler) // registers the main handler.
 
 	srv := &http.Server{
 		Handler: mux,
 	}
 
-	go func() {
-		var err error
-		if l != nil {
-			// Use the provided listener
-			err = srv.Serve(l)
-		} else {
-			// Listen on the specified port if no listener is provided
-			srv.Addr = ":" + p.Port
-			err = srv.ListenAndServe()
-		}
-		if err != http.ErrServerClosed {
-			log.Printf("HTTP server listen failed: %v", err)
-		}
-	}()
+    if l != nil {
+        // use the provided listener
+        go srv.Serve(l)
+    } else {
+        // listen on the specified port if no listener is provided
+        listener, err := net.Listen("tcp", ":" + p.Port)
+        if err != nil {
+            log.Printf("HTTP server listen failed: %v", err)
+        }
+        go srv.Serve(listener)
+    }
 
-	// Shuts down server when quitch gets closed
+	// shuts down server when quitch gets closed
 	go func() {
 		<-p.quitch
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownWait)
