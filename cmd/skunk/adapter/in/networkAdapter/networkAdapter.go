@@ -234,8 +234,6 @@ func startPeer(onionService *cretztor.OnionService) (*peer.Peer, error) {
 	}
 	peerInstance.Listen(onionService)
 
-	time.Sleep(1 * time.Second)
-
 	return peerInstance, err
 }
 
