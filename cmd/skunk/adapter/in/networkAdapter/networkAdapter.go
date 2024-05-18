@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
-	"time"
 
 	cretztor "github.com/cretz/bine/tor"
 
@@ -75,7 +74,7 @@ func (n *NetworkAdapter) SubscribeToNetwork(observer network.NetworkObserver) er
 	message := network.Message{
 		Id:              util.UUID(),
 		Timestamp:       util.CurrentTimeMillis(),
-		Content:         n.peer.Address,
+		Content:         fmt.Sprintf(`"%s"`, n.peer.Address),
 		FromUser:        "",
 		SenderAddress:   "",
 		ReceiverAddress: "",
