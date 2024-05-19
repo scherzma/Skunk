@@ -79,7 +79,6 @@ func TestPeerSetWriteConn(t *testing.T) {
 	peer1.Listen(nil)
 
 	err := peer2.Connect(peer1.Address)
-	time.Sleep(waitTime)
 
 	// First time setting the write conn to peer1.Address should work
 	err = peer2.SetWriteConn(peer1.Address)

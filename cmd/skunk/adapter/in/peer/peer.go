@@ -176,12 +176,16 @@ func (p *Peer) Connect(address string) error {
 	headers.Add("X-Peer-Address", p.Address)
 
 	c, _, err := dialer.Dial(address, headers)
-
 	if err != nil {
 		return fmt.Errorf("failed to dial websocket: %v", err)
 	}
 
-	return p.handleNewConnection(c, address)
+    err = p.handleNewConnection(c, address)
+    if err != nil {
+        return err
+    }
+
+	return nil
 }
 
 // readMessage attempts to read a single message from the specified websocket connection.
@@ -226,9 +230,17 @@ func (p *Peer) ReadMessages(messageCh chan<- string, errorCh chan<- error) {
 		for {
 			select {
 			case <-ticker.C:
+                // copy current conns to not lock for the whole time
+                var connsToRead map[string]*websocket.Conn
+                p.mapRWLock.RLock()
+                connsToRead = make(map[string]*websocket.Conn, len(p.readConns))
+                for addr, conn := range p.readConns {
+                    connsToRead[addr] = conn
+                }
+                p.mapRWLock.Unlock()
+
 				// try to read from every connection
-				p.mapRWLock.RLock()
-				for addr, conn := range p.readConns {
+				for addr, conn := range connsToRead {
 					wg.Add(1)
 					go func(conn *websocket.Conn, addr string) {
 						defer wg.Done()
@@ -244,7 +256,6 @@ func (p *Peer) ReadMessages(messageCh chan<- string, errorCh chan<- error) {
 						}
 					}(conn, addr)
 				}
-				p.mapRWLock.RUnlock()
 				// stop reading from connections when server shuts down
 			case <-p.quitch:
 				ticker.Stop()
@@ -277,11 +288,11 @@ func (p *Peer) WriteMessage(message string) error {
 // and signaling the quitch channel to stop the HTTP server.
 func (p *Peer) Shutdown() {
 	p.mapRWLock.RLock()
-	defer p.mapRWLock.RUnlock()
-
 	for _, conn := range p.readConns {
 		conn.Close()
 	}
+	p.mapRWLock.RUnlock()
+
 	p.readConns = make(map[string]*websocket.Conn) // Resets the connection pool.
 	p.writeConn = nil
 

@@ -65,6 +65,10 @@ func (p *Peer) AddNetworkConnection(connection network.NetworkConnection) {
 func (p *Peer) RemoveNetworkConnection(connection network.NetworkConnection) {
 	for i, c := range p.connections {
 		if c == connection {
+            err : = c.UnsubscribeFromNetwork()
+            if err != nil {
+                fmt.Println(err)
+            }
 			p.connections = append(p.connections[:i], p.connections[i+1:]...)
 			break
 		}
@@ -80,7 +84,6 @@ func (p *Peer) Notify(message network.Message) error {
 		if !p.securityContext.ValidateIncomingMessage(message) {
 			return errors.New("invalid message")
 		}
-
 		return handler.HandleMessage(message)
 	}
 	return errors.New("invalid message operation")
@@ -88,7 +91,6 @@ func (p *Peer) Notify(message network.Message) error {
 
 // SendMessageToNetworkPeer sends a message to a network peer.
 func (p *Peer) SendMessageToNetworkPeer(address string, message network.Message) error {
-
 	if !p.securityContext.ValidateOutgoingMessage(message) {
 		return errors.New("invalid message")
 	}

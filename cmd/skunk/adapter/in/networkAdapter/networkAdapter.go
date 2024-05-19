@@ -100,8 +100,8 @@ func (n *NetworkAdapter) UnsubscribeFromNetwork() error {
 	}
 
 	// stop tor and peer services
-	stopTor(n.tor)
-	stopPeer(n.peer)
+    n.tor.StopTor()
+    n.peer.Shutdown()
 
 	n.subscriber = nil
 	n.peer = nil
@@ -234,14 +234,4 @@ func startPeer(onionService *cretztor.OnionService) (*peer.Peer, error) {
 	peerInstance.Listen(onionService)
 
 	return peerInstance, err
-}
-
-// stopTor stops the tor service
-func stopTor(torInstance *tor.Tor) {
-	torInstance.StopTor()
-}
-
-// stopPeer shuts down the peer network connection
-func stopPeer(peerInstance *peer.Peer) {
-	peerInstance.Shutdown()
 }

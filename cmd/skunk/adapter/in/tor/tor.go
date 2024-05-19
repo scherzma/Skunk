@@ -57,6 +57,7 @@ func NewTor(torConfig *TorConfig) (*Tor, error) {
 	return &Tor{
 		torConfig:   torConfig,
 		torInstance: nil,
+        onion: nil,
 	}, nil
 }
 
@@ -72,6 +73,7 @@ func (t *Tor) StartTor() error {
 		DataDir:         t.torConfig.DataDir,
 		DebugWriter:     os.Stdout, // just for testing. might change later
 	}
+
 	// if configured use the go-libtor embedded tor process creator
 	if t.torConfig.UseEmbedded {
 		conf.ProcessCreator = libtor.Creator
@@ -143,23 +145,33 @@ func (t *Tor) StartHiddenService() (*tor.OnionService, error) {
 	if err != nil {
 		return nil, err
 	}
+    t.onion = onion
 
 	return onion, nil
 }
 
 // StopTor stops the tor instance (and hiddenservice) and handles cleanup.
 func (t *Tor) StopTor() error {
+    if t.onion == nil {
+		return fmt.Errorf("need to wait until Listen returned before attempting to close")
+    }
+    if t.torInstance == nil {
+		return fmt.Errorf("can't stop tor if tor is nil")
+    }
+
 	err := t.torInstance.Close()
 	if err != nil {
 		return fmt.Errorf("error stopping tor: %v", err)
 	}
-	t.torInstance = nil
 
-	// clean up data directory if needed.
+	// clean up data directory if configured
 	if t.torConfig.DataDir != "" && t.torConfig.DeleteDataDirOnClose {
 		if err := os.RemoveAll(t.torConfig.DataDir); err != nil {
 			return fmt.Errorf("failed to remove data dir %v: %v", t.torConfig.DataDir, err)
 		}
 	}
+
+	t.torInstance = nil
+    t.onion = nil
 	return nil
 }
