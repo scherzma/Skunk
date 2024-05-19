@@ -237,7 +237,7 @@ func (p *Peer) ReadMessages(messageCh chan<- string, errorCh chan<- error) {
                 for addr, conn := range p.readConns {
                     connsToRead[addr] = conn
                 }
-                p.mapRWLock.Unlock()
+                p.mapRWLock.RUnlock()
 
 				// try to read from every connection
 				for addr, conn := range connsToRead {

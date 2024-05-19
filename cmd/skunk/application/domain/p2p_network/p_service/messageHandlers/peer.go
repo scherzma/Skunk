@@ -3,10 +3,12 @@ package messageHandlers
 
 import (
 	"errors"
+    "fmt"
+	"sync"
+
 	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_model"
 	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_service"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
-	"sync"
 )
 
 var (
@@ -65,7 +67,7 @@ func (p *Peer) AddNetworkConnection(connection network.NetworkConnection) {
 func (p *Peer) RemoveNetworkConnection(connection network.NetworkConnection) {
 	for i, c := range p.connections {
 		if c == connection {
-            err : = c.UnsubscribeFromNetwork()
+            err := c.UnsubscribeFromNetwork()
             if err != nil {
                 fmt.Println(err)
             }

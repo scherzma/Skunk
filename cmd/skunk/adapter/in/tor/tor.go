@@ -29,6 +29,7 @@ type TorConfig struct {
 type Tor struct {
 	torConfig   *TorConfig // configuration for the tor instance.
 	torInstance *tor.Tor   // the tor instance.
+    onion       *tor.OnionService
 }
 
 // NewTor initializes a new tor instance with the provided configuration.
