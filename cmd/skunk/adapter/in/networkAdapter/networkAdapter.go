@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+	"time"
 
 	cretztor "github.com/cretz/bine/tor"
 
@@ -100,8 +101,10 @@ func (n *NetworkAdapter) UnsubscribeFromNetwork() error {
 	}
 
 	// stop tor and peer services
-	n.tor.StopTor()
 	n.peer.Shutdown()
+	// peer shutdown takes one second
+	time.Sleep(2 * time.Second)
+	n.tor.StopTor()
 
 	n.subscriber = nil
 	n.peer = nil

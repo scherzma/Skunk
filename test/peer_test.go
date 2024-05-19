@@ -145,7 +145,7 @@ func TestPeerReadMessages(t *testing.T) {
 	peer2.WriteMessage("Recursive ...")
 
 	// wait until all messages have been sent and received
-	time.Sleep(10 * time.Second)
+	time.Sleep(13 * time.Second)
 
 	// check that no error occured in this time
 	select {

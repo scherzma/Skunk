@@ -242,7 +242,7 @@ func (p *Peer) ReadMessages(messageCh chan<- string, errorCh chan<- error) {
 				// try to read from every connection
 				for addr, conn := range connsToRead {
 					wg.Add(1)
-					go func(conn *websocket.Conn, addr string) {
+					go func(addr string, conn *websocket.Conn) {
 						defer wg.Done()
 						msg, err := p.readMessage(conn, addr)
 						// this error occurs when a peer is offline
@@ -254,7 +254,7 @@ func (p *Peer) ReadMessages(messageCh chan<- string, errorCh chan<- error) {
 							// the conn but the error is not due to the conn being closed.
 							messageCh <- msg
 						}
-					}(conn, addr)
+					}(addr, conn)
 				}
 				// stop reading from connections when server shuts down
 			case <-p.quitch:

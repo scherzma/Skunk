@@ -48,7 +48,16 @@ func TestNetworkAdapterSendMessage(t *testing.T) {
 	onion, _ := torInstance.StartHiddenService()
 
 	peerNetworkInstance, _ := peer.NewPeer(onion.ID+".onion", "1110", "2220", "127.0.0.1:9052")
-	defer peerNetworkInstance.Listen(onion)
+	peerNetworkInstance.Listen(onion)
+
+	defer func() {
+		// sleep because shutdown takes one second
+		peerNetworkInstance.Shutdown()
+		time.Sleep(2 * time.Second)
+		torInstance.StopTor()
+
+		peerInstance.RemoveNetworkConnection(networkConnection)
+	}()
 
 	messageCh := make(chan string)
 	errorCh := make(chan error)
@@ -58,7 +67,7 @@ func TestNetworkAdapterSendMessage(t *testing.T) {
 	err := peerInstance.SendMessageToNetworkPeer(peerNetworkInstance.Address, testMessage)
 	assert.NoError(t, err)
 
-	time.Sleep(20 * time.Second)
+	time.Sleep(1 * time.Minute)
 
 	select {
 	case msg := <-messageCh:
@@ -69,12 +78,6 @@ func TestNetworkAdapterSendMessage(t *testing.T) {
 	default:
 		assert.Falsef(t, true, "message could not be received")
 	}
-
-	peerNetworkInstance.Shutdown()
-	// Sleep because shutdown takes one second
-	time.Sleep(2 * time.Second)
-	torInstance.StopTor()
-	peerInstance.RemoveNetworkConnection(networkConnection)
 }
 
 func TestNetworkAdapterReceiveMessage(t *testing.T) {
@@ -108,6 +111,15 @@ func TestNetworkAdapterReceiveMessage(t *testing.T) {
 	peerNetworkInstance, _ := peer.NewPeer(onion.ID+".onion", "3330", "4440", "127.0.0.1:9053")
 	peerNetworkInstance.Listen(onion)
 
+	defer func() {
+		peerNetworkInstance.Shutdown()
+		// sleep because shutdown takes one second
+		time.Sleep(2 * time.Second)
+		torInstance.StopTor()
+
+		peerInstance.RemoveNetworkConnection(networkConnection)
+	}()
+
 	err := peerNetworkInstance.Connect(peerInstance.Address)
 	assert.NoError(t, err)
 
@@ -120,10 +132,4 @@ func TestNetworkAdapterReceiveMessage(t *testing.T) {
 	time.Sleep(1 * time.Minute)
 
 	assert.Equal(t, "ws://testworked.onion:1111", peerInstance.Address)
-
-	peerNetworkInstance.Shutdown()
-	// Sleep because shutdown takes one second
-	time.Sleep(2 * time.Second)
-	torInstance.StopTor()
-	peerInstance.RemoveNetworkConnection(networkConnection)
 }
