@@ -180,10 +180,10 @@ func (p *Peer) Connect(address string) error {
 		return fmt.Errorf("failed to dial websocket: %v", err)
 	}
 
-    err = p.handleNewConnection(c, address)
-    if err != nil {
-        return err
-    }
+	err = p.handleNewConnection(c, address)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -230,14 +230,14 @@ func (p *Peer) ReadMessages(messageCh chan<- string, errorCh chan<- error) {
 		for {
 			select {
 			case <-ticker.C:
-                // copy current conns to not lock for the whole time
-                var connsToRead map[string]*websocket.Conn
-                p.mapRWLock.RLock()
-                connsToRead = make(map[string]*websocket.Conn, len(p.readConns))
-                for addr, conn := range p.readConns {
-                    connsToRead[addr] = conn
-                }
-                p.mapRWLock.RUnlock()
+				// copy current conns to not lock for the whole time
+				var connsToRead map[string]*websocket.Conn
+				p.mapRWLock.RLock()
+				connsToRead = make(map[string]*websocket.Conn, len(p.readConns))
+				for addr, conn := range p.readConns {
+					connsToRead[addr] = conn
+				}
+				p.mapRWLock.RUnlock()
 
 				// try to read from every connection
 				for addr, conn := range connsToRead {

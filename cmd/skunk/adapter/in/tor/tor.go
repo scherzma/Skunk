@@ -29,7 +29,7 @@ type TorConfig struct {
 type Tor struct {
 	torConfig   *TorConfig // configuration for the tor instance.
 	torInstance *tor.Tor   // the tor instance.
-    onion       *tor.OnionService
+	onion       *tor.OnionService
 }
 
 // NewTor initializes a new tor instance with the provided configuration.
@@ -58,7 +58,7 @@ func NewTor(torConfig *TorConfig) (*Tor, error) {
 	return &Tor{
 		torConfig:   torConfig,
 		torInstance: nil,
-        onion: nil,
+		onion:       nil,
 	}, nil
 }
 
@@ -146,19 +146,19 @@ func (t *Tor) StartHiddenService() (*tor.OnionService, error) {
 	if err != nil {
 		return nil, err
 	}
-    t.onion = onion
+	t.onion = onion
 
 	return onion, nil
 }
 
 // StopTor stops the tor instance (and hiddenservice) and handles cleanup.
 func (t *Tor) StopTor() error {
-    if t.onion == nil {
+	if t.onion == nil {
 		return fmt.Errorf("need to wait until Listen returned before attempting to close")
-    }
-    if t.torInstance == nil {
+	}
+	if t.torInstance == nil {
 		return fmt.Errorf("can't stop tor if tor is nil")
-    }
+	}
 
 	err := t.torInstance.Close()
 	if err != nil {
@@ -173,6 +173,6 @@ func (t *Tor) StopTor() error {
 	}
 
 	t.torInstance = nil
-    t.onion = nil
+	t.onion = nil
 	return nil
 }

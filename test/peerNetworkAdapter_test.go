@@ -48,9 +48,7 @@ func TestNetworkAdapterSendMessage(t *testing.T) {
 	onion, _ := torInstance.StartHiddenService()
 
 	peerNetworkInstance, _ := peer.NewPeer(onion.ID+".onion", "1110", "2220", "127.0.0.1:9052")
-	defer 
-
-	peerNetworkInstance.Listen(onion)
+	defer peerNetworkInstance.Listen(onion)
 
 	messageCh := make(chan string)
 	errorCh := make(chan error)
@@ -72,9 +70,9 @@ func TestNetworkAdapterSendMessage(t *testing.T) {
 		assert.Falsef(t, true, "message could not be received")
 	}
 
-    peerNetworkInstance.Shutdown()
-    // Sleep because shutdown takes one second
-    time.Sleep(2 * time.Second)
+	peerNetworkInstance.Shutdown()
+	// Sleep because shutdown takes one second
+	time.Sleep(2 * time.Second)
 	torInstance.StopTor()
 	peerInstance.RemoveNetworkConnection(networkConnection)
 }
@@ -123,9 +121,9 @@ func TestNetworkAdapterReceiveMessage(t *testing.T) {
 
 	assert.Equal(t, "ws://testworked.onion:1111", peerInstance.Address)
 
-    peerNetworkInstance.Shutdown()
-    // Sleep because shutdown takes one second
-    time.Sleep(2 * time.Second)
+	peerNetworkInstance.Shutdown()
+	// Sleep because shutdown takes one second
+	time.Sleep(2 * time.Second)
 	torInstance.StopTor()
 	peerInstance.RemoveNetworkConnection(networkConnection)
 }

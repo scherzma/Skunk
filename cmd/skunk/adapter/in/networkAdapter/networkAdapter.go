@@ -100,8 +100,8 @@ func (n *NetworkAdapter) UnsubscribeFromNetwork() error {
 	}
 
 	// stop tor and peer services
-    n.tor.StopTor()
-    n.peer.Shutdown()
+	n.tor.StopTor()
+	n.peer.Shutdown()
 
 	n.subscriber = nil
 	n.peer = nil
