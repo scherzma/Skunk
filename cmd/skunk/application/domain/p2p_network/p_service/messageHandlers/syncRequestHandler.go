@@ -10,12 +10,17 @@ import (
 	"time"
 )
 
+// SyncRequestHandler handles the "SyncRequest" message operation.
 type syncRequestHandler struct {
 	syncStorage           store.SyncStoragePort
 	networkMessageStorage store.NetworkMessageStoragePort
 	messageSender         MessageSender
 }
 
+// HandleMessage processes the received "SyncRequest" message.
+// It retrieves the chat messages from the repository, finds the missing messages
+// between the current peer and the other peer, and sends a sync response and a
+// sync request to the other peer.
 func NewSyncRequestHandler(syncStorage store.SyncStoragePort, networkMessageStorage store.NetworkMessageStoragePort) *syncRequestHandler {
 	return &syncRequestHandler{
 		syncStorage:           syncStorage,
@@ -28,7 +33,7 @@ func (s *syncRequestHandler) HandleMessage(message network.Message) error {
 	chatRepo := p_model.GetNetworkChatsInstance()       // TODO: change
 	chatMessageRepo := chatRepo.GetChat(message.ChatID) // TODO: change
 
-	// Parse the content of the message
+	// Structure of the message:
 	/*
 		{
 		  "existingMessageIds": [

@@ -1,3 +1,4 @@
+// Package p_model provides data models for the p2p network.
 package p_model
 
 import (
@@ -5,17 +6,21 @@ import (
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
 )
 
+// NetworkChatMessages represents a collection of chat messages in the network.
 type NetworkChatMessages struct {
 	chatName        string
 	chatMessagesMap map[string]network.Message
 }
 
+// NewNetworkChatMessages creates a new instance of NetworkChatMessages.
 func NewNetworkChatMessages() *NetworkChatMessages {
 	return &NetworkChatMessages{
 		chatMessagesMap: make(map[string]network.Message),
 	}
 }
 
+// AddMessage adds a new message to the NetworkChatMessages.
+// It returns an error if the message already exists.
 func (ncm *NetworkChatMessages) AddMessage(message network.Message) error {
 	if _, exists := ncm.chatMessagesMap[message.Id]; exists {
 		return errors.New("message already exists")
@@ -33,6 +38,7 @@ func (ncm *NetworkChatMessages) GetMessages() []network.Message {
 	return messages
 }
 
+// GetMissingExternalMessages returns the messages that are missing from the input message IDs.
 func (ncm *NetworkChatMessages) GetMissingExternalMessages(inputMessageIDs []string) []network.Message {
 	missingMessages := make([]network.Message, 0)
 	inputMap := make(map[string]bool)
@@ -50,6 +56,7 @@ func (ncm *NetworkChatMessages) GetMissingExternalMessages(inputMessageIDs []str
 	return missingMessages
 }
 
+// GetMissingInternalMessages returns the messages that are missing internally based on the input message IDs.
 func (ncm *NetworkChatMessages) GetMissingInternalMessages(inputMessageIDs []string) []network.Message {
 	missingMessages := make([]network.Message, 0)
 	ncmMap := ncm.chatMessagesMap
@@ -62,6 +69,7 @@ func (ncm *NetworkChatMessages) GetMissingInternalMessages(inputMessageIDs []str
 	return missingMessages
 }
 
+// GetMissingInternalMessageIDs returns the message IDs that are missing internally based on the input message IDs.
 func (ncm *NetworkChatMessages) GetMissingInternalMessageIDs(inputMessageIDs []string) []string {
 	missingMessageIDs := make([]string, 0)
 	ncmMap := ncm.chatMessagesMap

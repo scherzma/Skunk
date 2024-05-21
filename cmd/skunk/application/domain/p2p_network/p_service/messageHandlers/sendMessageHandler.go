@@ -8,6 +8,7 @@ import (
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/store"
 )
 
+// SendMessageHandler handles the "SendMessage" message operation.
 type sendMessageHandler struct {
 	userChatLogic         chat.ChatLogic
 	networkMessageStorage store.NetworkMessageStoragePort

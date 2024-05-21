@@ -1,5 +1,6 @@
 package frontend
 
+// FrontendMessage represents a message sent from the frontend to the backend
 type FrontendMessage struct {
 	Timestamp int64
 	Content   string
@@ -8,6 +9,7 @@ type FrontendMessage struct {
 	Operation OperationType
 }
 
+// OperationType represents the different types of operations that can be performed
 type OperationType int
 
 const (
@@ -21,10 +23,12 @@ const (
 	TEST_MESSAGE   OperationType = iota
 )
 
+// FrontendObserver is an interface for observing messages from the frontend
 type FrontendObserver interface {
 	Notify(message FrontendMessage) error
 }
 
+// Frontend is an interface for interacting with the frontend
 type Frontend interface {
 	SubscribeToFrontend(observer FrontendObserver) error
 	UnsubscribeFromFrontend(observer FrontendObserver) error

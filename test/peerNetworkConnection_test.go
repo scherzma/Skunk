@@ -8,6 +8,8 @@ import (
 	"testing"
 )
 
+// TestGetPeerInstance tests the GetPeerInstance function of the messageHandlers package.
+// It verifies that the function returns the same instance when called multiple times.
 func TestGetPeerInstance(t *testing.T) {
 	peer1 := p_service.GetPeerInstance()
 	peer2 := p_service.GetPeerInstance()
@@ -17,6 +19,9 @@ func TestGetPeerInstance(t *testing.T) {
 	}
 }
 
+// TestNotify tests the Notify method of the Peer struct.
+// It creates a test message and sends it to the peer using the Notify method.
+// It asserts that no error is returned.
 func TestNotify(t *testing.T) {
 	peer := p_service.GetPeerInstance()
 
@@ -38,6 +43,11 @@ func TestNotify(t *testing.T) {
 
 }
 
+// TestSubscribeAndUnsubscribeToNetwork tests the SubscribeToNetwork and UnsubscribeFromNetwork
+// methods of the NetworkConnection interface.
+// It uses a mock connection and a peer instance to subscribe and unsubscribe the peer
+// to/from the network.
+// It asserts that no error is returned in both cases.
 func TestSubscribeAndUnsubscribeToNetwork(t *testing.T) {
 	mockConnection := networkMockAdapter.GetMockConnection()
 	peer := p_service.GetPeerInstance()
@@ -45,6 +55,6 @@ func TestSubscribeAndUnsubscribeToNetwork(t *testing.T) {
 	err := mockConnection.SubscribeToNetwork(peer)
 	assert.NoError(t, err, "SubscribeToNetwork() failed, expected nil, got error")
 
-	err = mockConnection.UnsubscribeFromNetwork(peer)
+	err = mockConnection.UnsubscribeFromNetwork()
 	assert.NoError(t, err, "UnsubscribeFromNetwork() failed, expected nil, got error")
 }

@@ -41,3 +41,9 @@ go.work
 .idea/sqlDataSources.xml
 .idea/dynamic.xml
 .idea/uiDesigner.xml
+.idea
+
+# Ignore all subdirectories in the testfolder
+test/*
+!test/*
+test/*/**

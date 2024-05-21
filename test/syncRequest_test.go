@@ -8,6 +8,10 @@ import (
 	"testing"
 )
 
+// TestSyncRequestHandler tests the SyncRequestHandler message handler.
+// It sets up a mock network connection, sends a test message to the peer,
+// and then sends a sync request message to trigger the sync process.
+// It also creates some internal messages and adds them to the chat repository.
 func TestSyncRequestHandler(t *testing.T) {
 	// Create a mock network connection
 	testMessage := network.Message{
@@ -86,4 +90,5 @@ func TestSyncRequestHandler(t *testing.T) {
 
 	mockNetworkConnection.SendMockNetworkMessageToSubscribers(testSyncMessage)
 
+	// TODO: Improve test
 }

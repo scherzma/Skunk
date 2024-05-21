@@ -8,14 +8,13 @@ import (
 
 // NetworkMockAdapter is a mock adapter for the network
 // It implements the NetworkConnection interface
-
 var (
 	mockConnection *MockConnection // singleton for testing purposes
 	once           sync.Once
 )
 
 type MockConnection struct {
-	subscribers []network.NetworkObserver
+	subscriber network.NetworkObserver
 }
 
 func GetMockConnection() *MockConnection {
@@ -27,32 +26,33 @@ func GetMockConnection() *MockConnection {
 
 // SubscribeToNetwork is a mock function for the network
 func (m *MockConnection) SubscribeToNetwork(observer network.NetworkObserver) error {
-	m.subscribers = append(m.subscribers, observer)
+	if m.subscriber != nil {
+		return fmt.Errorf("network adapter is already connected to observer: %v", observer)
+	}
+
+	m.subscriber = observer
 	return nil
 }
 
 // UnsubscribeFromNetwork is a mock function for the network
-func (m *MockConnection) UnsubscribeFromNetwork(observer network.NetworkObserver) error {
-	for i, sub := range m.subscribers {
-		if sub == observer {
-			m.subscribers = append(m.subscribers[:i], m.subscribers[i+1:]...)
-			break
-		}
+func (m *MockConnection) UnsubscribeFromNetwork() error {
+	if m.subscriber == nil {
+		return fmt.Errorf("can't unsubscribe from nil")
 	}
+
+	m.subscriber = nil
 	return nil
 }
 
 // SendMessageToNetworkPeer is a mock function for the network
-func (m *MockConnection) SendMessageToNetworkPeer(message network.Message) error {
-	fmt.Println("Sending message to: " + message.ReceiverAddress)
+func (m *MockConnection) SendMessageToNetworkPeer(address string, message network.Message) error {
+	fmt.Println("Sending message to: " + address)
 	fmt.Println("Message: ", message)
 	return nil
 }
 
 // SendMockNetworkMessageToSubscribers is a mock function for the network
 func (m *MockConnection) SendMockNetworkMessageToSubscribers(message network.Message) error {
-	for _, sub := range m.subscribers {
-		sub.Notify(message)
-	}
+	m.subscriber.Notify(message)
 	return nil
 }
