@@ -43,7 +43,7 @@ Quick Start Guide
 
 Prerequisites
 
-- Go (version 1.17+)
+- Go (version 1.20)
 - Tor (For contributers / version 0.4.6.10)
 
 //Build from source description (in progress)//
