@@ -119,7 +119,7 @@ By following these standards, we ensure that our codebase remains consistent, ma
 
 Skunk is licensed under the GPL3 License.
 
-Contact
-scherzma
+PSA: This is a student project. We do not recommend using this software for sensitive data, as it may not provide the necessary level of security and confidentiality. To handle sensitive data, use alternative software instead.
+
 
 ```
