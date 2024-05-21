@@ -25,7 +25,7 @@ func main() {
 
 	dbPath := "test.db"
 
-	adapter := storageSQLiteAdapter.NewStorageSQLiteAdapter(dbPath)
+	adapter := storageSQLiteAdapter.GetInstance(dbPath)
 
 	testMessages := []network.Message{
 		{

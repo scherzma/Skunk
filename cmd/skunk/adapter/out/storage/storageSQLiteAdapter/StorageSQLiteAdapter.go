@@ -50,6 +50,16 @@ func (a *StorageSQLiteAdapter) CreateTables() {
 	}
 }
 
+func (a *StorageSQLiteAdapter) ChatCreated(chatName string, chatId string) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (a *StorageSQLiteAdapter) PeerSetUsername(peerId string, chatId string, username string) error {
+	//TODO implement me
+	panic("implement me")
+}
+
 func (a *StorageSQLiteAdapter) SetPeerUsername(username, peerID, chatID string) error {
 	stmt, err := a.db.Prepare("UPDATE ChatMembers SET username = ? WHERE peer_id = ? AND chat_id = ?")
 	if err != nil {
@@ -279,22 +289,17 @@ func (a *StorageSQLiteAdapter) RetrieveMessage(messageID string) (network.Messag
 	return message, nil
 }
 
-type Chat struct {
-	ChatID string
-	Name   string
-}
-
-func (a *StorageSQLiteAdapter) GetChats() ([]Chat, error) {
+func (a *StorageSQLiteAdapter) GetChats() ([]store.Chat, error) {
 	rows, err := a.db.Query("SELECT chat_id, name FROM Chats")
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var chats []Chat
+	var chats []store.Chat
 	for rows.Next() {
-		var chat Chat
-		err := rows.Scan(&chat.ChatID, &chat.Name)
+		var chat store.Chat
+		err := rows.Scan(&chat.ChatId, &chat.ChatName)
 		if err != nil {
 			return nil, err
 		}
@@ -316,23 +321,17 @@ func (a *StorageSQLiteAdapter) GetUsername(peerID, chatID string) (string, error
 	return username, nil
 }
 
-type User struct {
-	PeerID   string
-	ChatID   string
-	Username string
-}
-
-func (a *StorageSQLiteAdapter) GetUsersInChat(chatID string) ([]User, error) {
+func (a *StorageSQLiteAdapter) GetUsersInChat(chatID string) ([]store.User, error) {
 	rows, err := a.db.Query("SELECT peer_id, chat_id, username FROM ChatMembers WHERE chat_id = ?", chatID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var users []User
+	var users []store.User
 	for rows.Next() {
-		var user User
-		err := rows.Scan(&user.PeerID, &user.ChatID, &user.Username)
+		var user store.User
+		err := rows.Scan(&user.UserId, &user.Username)
 		if err != nil {
 			return nil, err
 		}

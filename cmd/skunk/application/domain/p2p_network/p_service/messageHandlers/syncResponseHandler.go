@@ -3,17 +3,23 @@ package messageHandlers
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_model"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/store"
 )
 
-type SyncResponseHandler struct {
+type syncResponseHandler struct {
+	networkMessageStorage store.NetworkMessageStoragePort
 }
 
-func (s *SyncResponseHandler) HandleMessage(message network.Message) error {
+func NewSyncResponseHandler(networkMessageStorage store.NetworkMessageStoragePort) *syncResponseHandler {
+	return &syncResponseHandler{
+		networkMessageStorage: networkMessageStorage,
+	}
+}
 
-	chatRepo := p_model.GetNetworkChatsInstance()
-	chatMessageRepo := chatRepo.GetChat(message.ChatID)
+func (s *syncResponseHandler) HandleMessage(message network.Message) error {
+	//chatRepo := p_model.GetNetworkChatsInstance() TODO: change
+	//chatMessageRepo := chatRepo.GetChat(message.ChatID) TODO: change
 
 	var receivedMessages []network.Message
 	err := json.Unmarshal([]byte(message.Content), &receivedMessages)
@@ -22,8 +28,15 @@ func (s *SyncResponseHandler) HandleMessage(message network.Message) error {
 		return err
 	}
 
-	for _, message := range receivedMessages {
-		chatMessageRepo.AddMessage(message)
+	for _, msg := range receivedMessages {
+		// Store the message
+		err = s.networkMessageStorage.StoreMessage(msg)
+		if err != nil {
+			fmt.Println("Error storing message:", err)
+			return err
+		}
+		// Add the message to the chat repository
+		//chatMessageRepo.AddMessage(msg) TODO: change
 	}
 
 	return nil

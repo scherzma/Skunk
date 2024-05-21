@@ -34,5 +34,5 @@ type NetworkObserver interface {
 type NetworkConnection interface {
 	SubscribeToNetwork(observer NetworkObserver) error
 	UnsubscribeFromNetwork(observer NetworkObserver) error
-	SendMessageToNetworkPeer(address string, message Message) error
+	SendMessageToNetworkPeer(message Message) error
 }

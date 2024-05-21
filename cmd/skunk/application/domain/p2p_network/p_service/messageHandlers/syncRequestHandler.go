@@ -6,16 +6,27 @@ import (
 	"github.com/google/uuid"
 	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_model"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/store"
 	"time"
 )
 
-type SyncRequestHandler struct {
+type syncRequestHandler struct {
+	syncStorage           store.SyncStoragePort
+	networkMessageStorage store.NetworkMessageStoragePort
+	messageSender         MessageSender
 }
 
-func (s *SyncRequestHandler) HandleMessage(message network.Message) error {
+func NewSyncRequestHandler(syncStorage store.SyncStoragePort, networkMessageStorage store.NetworkMessageStoragePort) *syncRequestHandler {
+	return &syncRequestHandler{
+		syncStorage:           syncStorage,
+		networkMessageStorage: networkMessageStorage,
+	}
+}
 
-	chatRepo := p_model.GetNetworkChatsInstance()
-	chatMessageRepo := chatRepo.GetChat(message.ChatID)
+func (s *syncRequestHandler) HandleMessage(message network.Message) error {
+
+	chatRepo := p_model.GetNetworkChatsInstance()       // TODO: change
+	chatMessageRepo := chatRepo.GetChat(message.ChatID) // TODO: change
 
 	// Parse the content of the message
 	/*
@@ -38,8 +49,8 @@ func (s *SyncRequestHandler) HandleMessage(message network.Message) error {
 	}
 
 	// Find difference between "message" already known messages and own messages that the other peer does not know
-	missingExternalMessages := chatMessageRepo.GetMissingExternalMessages(content.ExistingMessageIDs)
-	missingInternalMessages := chatMessageRepo.GetMissingInternalMessageIDs(content.ExistingMessageIDs)
+	missingExternalMessages := chatMessageRepo.GetMissingExternalMessages(content.ExistingMessageIDs)   // TODO: change
+	missingInternalMessages := chatMessageRepo.GetMissingInternalMessageIDs(content.ExistingMessageIDs) // TODO: change
 
 	// Convert missingExternalMessages to a JSON string
 	externalMessagesBytes, err := json.Marshal(missingExternalMessages)
@@ -81,9 +92,8 @@ func (s *SyncRequestHandler) HandleMessage(message network.Message) error {
 		Operation:       network.SYNC_REQUEST,
 	}
 
-	peer := GetPeerInstance()
-	peer.SendMessageToNetworkPeer("addressResponse", syncResponse)
-	peer.SendMessageToNetworkPeer("addressRequest", syncRequest)
+	s.messageSender.SendMessage(syncResponse)
+	s.messageSender.SendMessage(syncRequest)
 
 	return nil
 }

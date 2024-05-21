@@ -8,8 +8,8 @@ type UserMessageStoragePort interface {
 
 type ChatActionStoragePort interface {
 	PeerJoinedChat(peerId string, chatId string) error
-	PeerLeftChat(peerId string, chatId string, senderId string, date int64) error
-	ChatCreated(chatName string, chatId string) error
+	PeerLeftChat(peerId string, chatId string) error
+	ChatCreated(chatName string, chatId string) error // Ensure this line exists
 }
 
 type PublicKeyAddress struct {
@@ -24,8 +24,8 @@ type ChatInvitationStoragePort interface {
 }
 
 type SyncStoragePort interface {
-	GetMissingInternalMessages(chatId string, inputMessageIDs []string) []string
-	GetMissingExternalMessages(chatId string, inputMessageIDs []string) []string
+	GetMissingInternalMessages(chatId string, inputMessageIDs []string) ([]string, error)
+	GetMissingExternalMessages(chatId string, inputMessageIDs []string) ([]string, error)
 }
 
 type NetworkMessageStoragePort interface {
@@ -51,9 +51,18 @@ type User struct {
 }
 
 type DisplayStoragePort interface {
-	GetChats() []Chat
-	GetUsername(peerId string, chatId string) string
-	GetUsersInChat(chatId string) []User
-	GetPeers() []string
-	GetChatMessages(chatId string) []ChatMessage
+	GetChats() ([]Chat, error)
+	GetUsername(peerID, chatID string) (string, error)
+	GetUsersInChat(chatID string) ([]User, error)
+	GetPeers() ([]string, error)
+	GetChatMessages(chatID string) ([]network.Message, error)
+}
+
+type Storage interface {
+	UserMessageStoragePort
+	ChatActionStoragePort
+	ChatInvitationStoragePort
+	SyncStoragePort
+	NetworkMessageStoragePort
+	DisplayStoragePort
 }

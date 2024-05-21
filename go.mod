@@ -6,11 +6,10 @@ require (
 	github.com/cretz/bine v0.2.0
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.1
-	github.com/ipsn/go-libtor v1.0.380
 	github.com/mattn/go-sqlite3 v1.14.22
+	github.com/ooni/go-libtor v1.1.8
 	github.com/stretchr/testify v1.9.0
 	golang.org/x/net v0.21.0
-	nhooyr.io/websocket v1.8.10
 )
 
 require (

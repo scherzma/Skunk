@@ -27,7 +27,7 @@ func main() {
 
 	dbPath := "test.db"
 
-	adapter := storageSQLiteAdapter.NewStorageSQLiteAdapter(dbPath)
+	adapter := storageSQLiteAdapter.GetInstance(dbPath)
 
 	testMessages := []network.Message{
 		{
@@ -649,7 +649,7 @@ import (
 	"time"
 
 	"github.com/cretz/bine/tor"
-	"github.com/ipsn/go-libtor"
+	"github.com/ooni/go-libtor"
 )
 
 // TorConfig holds configuration parameters for a Tor instance.
@@ -1083,15 +1083,23 @@ import (
 	"fmt"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/store"
 	"log"
 	"strings"
+	"sync"
 )
 
 type StorageSQLiteAdapter struct {
 	db *sql.DB
 }
 
-func NewStorageSQLiteAdapter(dbPath string) *StorageSQLiteAdapter {
+var (
+	instance *StorageSQLiteAdapter
+	once     sync.Once
+)
+
+// NewStorageSQLiteAdapter creates a new instance of StorageSQLiteAdapter and initializes the database
+func newStorageSQLiteAdapter(dbPath string) *StorageSQLiteAdapter {
 	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
 		log.Fatal(err)
@@ -1104,12 +1112,30 @@ func NewStorageSQLiteAdapter(dbPath string) *StorageSQLiteAdapter {
 	return adapter
 }
 
+// GetInstance returns the singleton instance of StorageSQLiteAdapter
+func GetInstance(dbPath string) *StorageSQLiteAdapter {
+	once.Do(func() {
+		instance = newStorageSQLiteAdapter(dbPath)
+	})
+	return instance
+}
+
 func (a *StorageSQLiteAdapter) CreateTables() {
 	sqlCommands := "CREATE TABLE IF NOT EXISTS Chats (\n    chat_id VARCHAR(1024) NOT NULL CONSTRAINT Chats_pk PRIMARY KEY,\n    name VARCHAR(40) NOT NULL\n);\n\nCREATE TABLE IF NOT EXISTS Peers (\n    peer_id INTEGER NOT NULL CONSTRAINT Peers_pk PRIMARY KEY AUTOINCREMENT,\n    public_key VARCHAR(1024) NOT NULL,\n    address VARCHAR(1024) NOT NULL\n);\n\nCREATE TABLE IF NOT EXISTS ChatMembers (\n    chat_member_id INTEGER NOT NULL CONSTRAINT ChatMembers_pk PRIMARY KEY AUTOINCREMENT,\n    date INTEGER NOT NULL,\n    peer_id VARCHAR(1024) NOT NULL CONSTRAINT ChatMembers_Peers_peer_id_fk REFERENCES Peers ON UPDATE CASCADE,\n    chat_id VARCHAR(1024) NOT NULL CONSTRAINT ChatMembers_Chats_chat_id_fk REFERENCES Chats ON UPDATE CASCADE,\n    username VARCHAR(50)\n);\n\nCREATE TABLE IF NOT EXISTS Messages (\n    message_id VARCHAR(1024) NOT NULL CONSTRAINT Messages_pk PRIMARY KEY,\n    content TEXT,\n    date INTEGER NOT NULL,\n    operation INTEGER NOT NULL,\n    sender_peer_id VARCHAR(1024) NOT NULL CONSTRAINT Messages_Peers_peer_id_fk REFERENCES Peers ON UPDATE CASCADE,\n    chat_id VARCHAR(1024) NOT NULL CONSTRAINT Messages_Chats_chat_id_fk REFERENCES Chats ON UPDATE CASCADE,\n    receiver_peer_id VARCHAR(1024) NOT NULL CONSTRAINT Messages_Peers_peer_id_fk_2 REFERENCES Peers,\n    sender_address VARCHAR(1024) NOT NULL,\n    receiver_address VARCHAR(1024) NOT NULL\n);\n\nCREATE TABLE IF NOT EXISTS Invitations (\n    invitation_id INTEGER NOT NULL CONSTRAINT Invitations_pk PRIMARY KEY AUTOINCREMENT,\n    invitation_status INTEGER NOT NULL,\n    message_id VARCHAR(1024) NOT NULL CONSTRAINT Invitations_Messages_message_id_fk REFERENCES Messages\n);\n\nCREATE TABLE IF NOT EXISTS PeersInInvitedChat (\n    public_key VARCHAR(1024) NOT NULL,\n    invited_peer_id INTEGER NOT NULL CONSTRAINT PeersInInvitedChat_pk PRIMARY KEY AUTOINCREMENT,\n    address VARCHAR(1024) NOT NULL,\n    invitation_id INTEGER NOT NULL CONSTRAINT PeersInInvitedChat_Invitations_invitation_id_fk REFERENCES Invitations\n);\n"
 	_, err := a.db.Exec(sqlCommands)
 	if err != nil {
 		log.Fatal(err)
 	}
+}
+
+func (a *StorageSQLiteAdapter) ChatCreated(chatName string, chatId string) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (a *StorageSQLiteAdapter) PeerSetUsername(peerId string, chatId string, username string) error {
+	//TODO implement me
+	panic("implement me")
 }
 
 func (a *StorageSQLiteAdapter) SetPeerUsername(username, peerID, chatID string) error {
@@ -1156,12 +1182,7 @@ func (a *StorageSQLiteAdapter) CreateChat(chatID, name string) error {
 	return err
 }
 
-type PublicKeyAddress struct {
-	Address   string
-	PublicKey string
-}
-
-func (a *StorageSQLiteAdapter) InvitedToChat(messageID string, peers []PublicKeyAddress) error {
+func (a *StorageSQLiteAdapter) InvitedToChat(messageID string, peers []store.PublicKeyAddress) error {
 	tx, err := a.db.Begin()
 	if err != nil {
 		return err
@@ -1196,7 +1217,7 @@ func (a *StorageSQLiteAdapter) InvitedToChat(messageID string, peers []PublicKey
 	return err
 }
 
-func (a *StorageSQLiteAdapter) PeerGotInvitedToChat(peerID, chatID string) error {
+func (a *StorageSQLiteAdapter) PeerGotInvitedToChat(peerId string, chatId string) error {
 	// Implement the logic to store a peer getting invited to a chat in the database
 	// ...
 	return nil
@@ -1568,7 +1589,7 @@ CREATE TABLE IF NOT EXISTS PeersInInvitedChat (
 package chat
 
 type ChatLogic interface {
-	RecieveMessage(senderId string, chatId string, message string) error
+	ReceiveMessage(senderId string, chatId string, message string) error
 	ReceiveChatInvitation(senderId string, chatId string, chatName string, chatMembers []string) error
 	PeerLeavesChat(senderId string, chatId string) error
 	PeerJoinsChat(senderId string, chatId string) error
@@ -1799,13 +1820,28 @@ func (n *NetworkChats) GetChat(chatId string) NetworkChatMessages {
 
 package p_service
 
-import "github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+import (
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/store"
+)
 
-type SecurityContext struct {
+type SecurityValidater interface {
+	ValidateOutgoingMessage(message network.Message) bool
+	ValidateIncomingMessage(message network.Message) bool
+	ValidatePeer(peer string) bool
 }
 
 // SecurityContext is a service that provides security checks for the network
 // It should be possible to implement all security checks in this service
+type SecurityContext struct {
+	store store.ChatInvitationStoragePort
+}
+
+func NewSecurityContext(store store.ChatInvitationStoragePort) *SecurityContext {
+	return &SecurityContext{
+		store: store,
+	}
+}
 
 func (s *SecurityContext) ValidateOutgoingMessage(message network.Message) bool {
 	return true
@@ -1832,30 +1868,42 @@ import (
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/store"
 )
 
-// This Peer gets invited to a chat
+// InviteToChatHandler handles invitations for a peer to join a chat
 type InviteToChatHandler struct {
 	userChatLogic         chat.ChatLogic
 	chatInvitationStorage store.ChatInvitationStoragePort
 }
 
+// NewInviteToChatHandler creates a new InviteToChatHandler
+func NewInviteToChatHandler(userChatLogic chat.ChatLogic, chatInvitationStorage store.ChatInvitationStoragePort) *InviteToChatHandler {
+	return &InviteToChatHandler{
+		userChatLogic:         userChatLogic,
+		chatInvitationStorage: chatInvitationStorage,
+	}
+}
+
+// HandleMessage processes the chat invitation message
 func (i *InviteToChatHandler) HandleMessage(message network.Message) error {
 
-	// Structure of the message:
+	// Message structure:
 	/*
 		{
-			"chatId": "asdf",
-			"chatName": "asdf",
+			"chatId": "chat_id",
+			"chatName": "chat_name",
 			"peers": [
-				"asdf",
-				"asdf"
+				{
+					"address": "peer_address",
+					"publicKey": "peer_public_key"
+				},
+				...
 			]
 		}
 	*/
 
 	var content struct {
-		ChatID   string `json:"chatId"`
-		ChatName string `json:"chatName"`
-		Peers    []string
+		ChatID   string                   `json:"chatId"`
+		ChatName string                   `json:"chatName"`
+		Peers    []store.PublicKeyAddress `json:"peers"`
 	}
 
 	err := json.Unmarshal([]byte(message.Content), &content)
@@ -1864,7 +1912,20 @@ func (i *InviteToChatHandler) HandleMessage(message network.Message) error {
 		return err
 	}
 
-	i.userChatLogic.ReceiveChatInvitation(message.SenderID, content.ChatID, content.ChatName, content.Peers)
+	// Store the chat invitation details
+	err = i.chatInvitationStorage.InvitedToChat(message.Id, content.Peers)
+	if err != nil {
+		return err
+	}
+
+	// Extract addresses from peers
+	peerAddresses := make([]string, len(content.Peers))
+	for idx, peer := range content.Peers {
+		peerAddresses[idx] = peer.Address
+	}
+
+	// Notify the chat logic of the received invitation
+	i.userChatLogic.ReceiveChatInvitation(message.SenderID, content.ChatID, content.ChatName, peerAddresses)
 
 	return nil
 }
@@ -1875,19 +1936,36 @@ func (i *InviteToChatHandler) HandleMessage(message network.Message) error {
 package messageHandlers
 
 import (
+	"fmt"
 	"github.com/scherzma/Skunk/cmd/skunk/application/domain/chat"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/store"
 )
 
 // A Peer joins a chat
-type JoinChatHandler struct {
-	userChatLogic chat.ChatLogic
+type joinChatHandler struct {
+	userChatLogic     chat.ChatLogic
+	chatActionStorage store.ChatActionStoragePort
 }
 
-func (j *JoinChatHandler) HandleMessage(message network.Message) error {
+func NewJoinChatHandler(userChatLogic chat.ChatLogic, chatActionStorage store.ChatActionStoragePort) *joinChatHandler {
+	return &joinChatHandler{
+		userChatLogic:     userChatLogic,
+		chatActionStorage: chatActionStorage,
+	}
+}
 
+func (j *joinChatHandler) HandleMessage(message network.Message) error {
+
+	// Update chat invitation storage
+	err := j.chatActionStorage.PeerJoinedChat(message.SenderID, message.ChatID)
+	if err != nil {
+		fmt.Println("Error updating chat invitation storage")
+		return err
+	}
+
+	// Handle peer joining the chat
 	j.userChatLogic.PeerJoinsChat(message.SenderID, message.ChatID)
-	//TODO make the necessary changes to the chat (SQLite (with interface of course))
 
 	return nil
 }
@@ -1898,19 +1976,36 @@ func (j *JoinChatHandler) HandleMessage(message network.Message) error {
 package messageHandlers
 
 import (
+	"fmt"
 	"github.com/scherzma/Skunk/cmd/skunk/application/domain/chat"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/store"
 )
 
 // A Peer leaves a chat
-type LeaveChatHandler struct {
-	userChatLogic chat.ChatLogic
+type leaveChatHandler struct {
+	userChatLogic     chat.ChatLogic
+	chatActionStorage store.ChatActionStoragePort
 }
 
-func (l *LeaveChatHandler) HandleMessage(message network.Message) error {
+func NewLeaveChatHandler(userChatLogic chat.ChatLogic, chatActionStorage store.ChatActionStoragePort) *leaveChatHandler {
+	return &leaveChatHandler{
+		userChatLogic:     userChatLogic,
+		chatActionStorage: chatActionStorage,
+	}
+}
 
+func (l *leaveChatHandler) HandleMessage(message network.Message) error {
+
+	// Update chat invitation storage and remove the peer from the chat
+	err := l.chatActionStorage.PeerLeftChat(message.SenderID, message.ChatID)
+	if err != nil {
+		fmt.Println("Error updating chat invitation storage")
+		return err
+	}
+
+	// Handle peer leaving the chat
 	l.userChatLogic.PeerLeavesChat(message.SenderID, message.ChatID)
-	//TODO make the necessary changes to the chat (SQLite (with interface of course))
 
 	return nil
 }
@@ -1934,9 +2029,9 @@ package messageHandlers
 import (
 	"errors"
 	"github.com/scherzma/Skunk/cmd/skunk/adapter/out/storage/storageSQLiteAdapter"
-	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_model"
 	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_service"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/store"
 	"sync"
 )
 
@@ -1946,41 +2041,54 @@ var (
 )
 
 type Peer struct {
-	Chats           p_model.NetworkChats
 	handlers        map[network.OperationType]MessageHandler
 	connections     []network.NetworkConnection
-	securityContext p_service.SecurityContext
+	securityContext p_service.SecurityValidater
+	storage         store.NetworkMessageStoragePort
+	messageSender   MessageSender
 }
 
 func GetPeerInstance() *Peer {
 	once.Do(func() {
+		storage := storageSQLiteAdapter.GetInstance("skunk.db")
+		securityContext := p_service.NewSecurityContext(storage)
+		sender := NewMessageSender(securityContext)
+
 		handlers := map[network.OperationType]MessageHandler{
-			network.JOIN_CHAT:      &JoinChatHandler{},
-			network.SEND_FILE:      &SendFileHandler{},
-			network.SYNC_REQUEST:   &SyncRequestHandler{},
-			network.SYNC_RESPONSE:  &SyncResponseHandler{},
-			network.SET_USERNAME:   &SetUsernameHandler{},
-			network.SEND_MESSAGE:   &SendMessageHandler{},
-			network.INVITE_TO_CHAT: &InviteToChatHandler{},
-			network.LEAVE_CHAT:     &LeaveChatHandler{},
+			network.JOIN_CHAT:      NewJoinChatHandler(nil, storage),
+			network.SEND_FILE:      NewSendFileHandler(nil, storage),
+			network.SYNC_REQUEST:   NewSyncRequestHandler(nil, storage),
+			network.SYNC_RESPONSE:  NewSyncResponseHandler(storage),
+			network.SET_USERNAME:   NewSetUsernameHandler(nil, storage),
+			network.SEND_MESSAGE:   NewSendMessageHandler(nil, storage),
+			network.INVITE_TO_CHAT: NewInviteToChatHandler(nil, storage),
+			network.LEAVE_CHAT:     NewLeaveChatHandler(nil, storage),
 			network.TEST_MESSAGE:   &TestMessageHandler{},
 			network.TEST_MESSAGE_2: &TestMessageHandler2{},
 		}
 
 		peerInstance = &Peer{
-			Chats:           p_model.NetworkChats{},
 			handlers:        handlers,
 			connections:     []network.NetworkConnection{},
-			securityContext: p_service.SecurityContext{},
+			securityContext: securityContext,
+			storage:         storage,
+			messageSender:   sender,
 		}
 	})
 
 	return peerInstance
 }
 
-func (p *Peer) AddNetworkConnection(connection network.NetworkConnection) {
+func (p *Peer) AddNetworkConnection(connection network.NetworkConnection) error {
+	if len(p.connections) > 0 {
+		return errors.New("connection already exists, multiple connections are not supported so far")
+	}
+
 	p.connections = append(p.connections, connection)
 	connection.SubscribeToNetwork(p)
+	p.messageSender.SetNetworkConnection(connection)
+
+	return nil
 }
 
 func (p *Peer) RemoveNetworkConnection(connection network.NetworkConnection) {
@@ -1999,25 +2107,10 @@ func (p *Peer) Notify(message network.Message) error {
 			return errors.New("invalid message")
 		}
 
-		storage := storageSQLiteAdapter.NewStorageSQLiteAdapter("test.db")
-		storage.StoreMessage(message)
+		p.storage.StoreMessage(message)
 		return handler.HandleMessage(message)
 	}
 	return errors.New("invalid message operation")
-}
-
-func (p *Peer) SendMessageToNetworkPeer(address string, message network.Message) error {
-
-	if !p.securityContext.ValidateOutgoingMessage(message) {
-		return errors.New("invalid message")
-	}
-
-	for _, connection := range p.connections {
-		if err := connection.SendMessageToNetworkPeer(address, message); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 
@@ -2026,28 +2119,47 @@ func (p *Peer) SendMessageToNetworkPeer(address string, message network.Message)
 package messageHandlers
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"github.com/scherzma/Skunk/cmd/skunk/application/domain/chat"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/store"
+	"io"
+	"os"
+	"path/filepath"
 )
 
 // A Peer sends a file to a chat
-type SendFileHandler struct {
-	userChatLogic chat.ChatLogic
+type sendFileHandler struct {
+	userChatLogic         chat.ChatLogic
+	chatInvitationStorage store.ChatInvitationStoragePort
 }
 
-func (s *SendFileHandler) HandleMessage(message network.Message) error {
+func NewSendFileHandler(userChatLogic chat.ChatLogic, chatInvitationStorage store.ChatInvitationStoragePort) *sendFileHandler {
+	return &sendFileHandler{
+		userChatLogic:         userChatLogic,
+		chatInvitationStorage: chatInvitationStorage,
+	}
+}
 
-	// Structure of the message:
+func (s *sendFileHandler) HandleMessage(message network.Message) error {
+
+	// Structure of the message (fileContent is base64 encoded):
 	/*
 		{
-			"fileContent": []byte("asdfasdfasdf"),
+			"fileName": "file_name",
+			"fileExtension": "file_extension",
+			"fileContent": "YmFzZTY0c3RyaW5n",
 		}
 	*/
 
 	var content struct {
-		FileContent []byte `json:"fileContent"`
+		FileName      string `json:"fileName"`
+		FileExtension string `json:"fileExtension"`
+		FileContent   string `json:"fileContent"`
 	}
 
 	err := json.Unmarshal([]byte(message.Content), &content)
@@ -2056,12 +2168,89 @@ func (s *SendFileHandler) HandleMessage(message network.Message) error {
 		return err
 	}
 
-	s.userChatLogic.ReceiveFile(message.SenderID, message.ChatID, string(content.FileContent))
-	//TODO that's not the right way to do it
-	// The file should be stored in a file system
-	// Also "ReceiveFile" should receive the file path instead of the file content
+	// Decode the base64-encoded file content
+	fileData, err := base64.StdEncoding.DecodeString(content.FileContent)
+	if err != nil {
+		fmt.Println("Error decoding file content")
+		return err
+	}
+
+	// Create a directory for storing the files if it doesn't exist
+	fileDir := "./stored_files"
+	if err := os.MkdirAll(fileDir, os.ModePerm); err != nil {
+		fmt.Println("Error creating file directory")
+		return err
+	}
+
+	// Create the file path
+	filePath := filepath.Join(fileDir, fmt.Sprintf("%s.%s", content.FileName, content.FileExtension))
+
+	// Check if the file already exists
+	if _, err := os.Stat(filePath); err == nil {
+		// File exists, compare hashes
+		existingHash, err := computeFileHash(filePath)
+		if err != nil {
+			fmt.Println("Error computing hash of existing file")
+			return err
+		}
+
+		newFileHash := computeHash(fileData)
+		if existingHash == newFileHash {
+			// Hashes are the same, use the existing file
+			s.userChatLogic.ReceiveFile(message.SenderID, message.ChatID, filePath)
+			return nil
+		} else {
+			// Hashes are different, modify the file name
+			filePath = getUniqueFilePath(fileDir, content.FileName, content.FileExtension)
+		}
+	}
+
+	// Write the file data to the file
+	if err := os.WriteFile(filePath, fileData, os.ModePerm); err != nil {
+		fmt.Println("Error writing file to filesystem")
+		return err
+	}
+
+	// Notify the chat logic of the received file with the file path
+	s.userChatLogic.ReceiveFile(message.SenderID, message.ChatID, filePath)
 
 	return nil
+}
+
+// computeFileHash computes the SHA-256 hash of a file
+func computeFileHash(filePath string) (string, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	hash := sha256.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return "", err
+	}
+
+	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+// computeHash computes the SHA-256 hash of the given data
+func computeHash(data []byte) string {
+	hash := sha256.New()
+	hash.Write(data)
+	return hex.EncodeToString(hash.Sum(nil))
+}
+
+// getUniqueFilePath generates a unique file path by appending a counter to the file name
+func getUniqueFilePath(dir, baseName, ext string) string {
+	counter := 1
+	for {
+		newFileName := fmt.Sprintf("%s_%d.%s", baseName, counter, ext)
+		newFilePath := filepath.Join(dir, newFileName)
+		if _, err := os.Stat(newFilePath); os.IsNotExist(err) {
+			return newFilePath
+		}
+		counter++
+	}
 }
 
 
@@ -2074,13 +2263,22 @@ import (
 	"fmt"
 	"github.com/scherzma/Skunk/cmd/skunk/application/domain/chat"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/store"
 )
 
-type SendMessageHandler struct {
-	userChatLogic chat.ChatLogic
+type sendMessageHandler struct {
+	userChatLogic         chat.ChatLogic
+	networkMessageStorage store.NetworkMessageStoragePort
 }
 
-func (s *SendMessageHandler) HandleMessage(message network.Message) error {
+func NewSendMessageHandler(userChatLogic chat.ChatLogic, networkMessageStorage store.NetworkMessageStoragePort) *sendMessageHandler {
+	return &sendMessageHandler{
+		userChatLogic:         userChatLogic,
+		networkMessageStorage: networkMessageStorage,
+	}
+}
+
+func (s *sendMessageHandler) HandleMessage(message network.Message) error {
 
 	// Structure of the message:
 	/*
@@ -2099,7 +2297,15 @@ func (s *SendMessageHandler) HandleMessage(message network.Message) error {
 		return err
 	}
 
-	s.userChatLogic.RecieveMessage(message.SenderID, message.ChatID, content.Message)
+	// Store the message
+	err = s.networkMessageStorage.StoreMessage(message)
+	if err != nil {
+		fmt.Println("Error storing message")
+		return err
+	}
+
+	// Handle the received message
+	s.userChatLogic.ReceiveMessage(message.SenderID, message.ChatID, content.Message)
 
 	return nil
 }
@@ -2114,18 +2320,27 @@ import (
 	"fmt"
 	"github.com/scherzma/Skunk/cmd/skunk/application/domain/chat"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/store"
 )
 
-type SetUsernameHandler struct {
-	userChatLogic chat.ChatLogic
+type setUsernameHandler struct {
+	userChatLogic      chat.ChatLogic
+	userMessageStorage store.UserMessageStoragePort
 }
 
-func (s *SetUsernameHandler) HandleMessage(message network.Message) error {
+func NewSetUsernameHandler(userChatLogic chat.ChatLogic, userMessageStorage store.UserMessageStoragePort) *setUsernameHandler {
+	return &setUsernameHandler{
+		userChatLogic:      userChatLogic,
+		userMessageStorage: userMessageStorage,
+	}
+}
+
+func (s *setUsernameHandler) HandleMessage(message network.Message) error {
 
 	// Structure of the message:
 	/*
 		{
-			"message": "asdfasdfasdf",
+			"username": "asdfasdfasdf",
 		}
 	*/
 
@@ -2139,6 +2354,14 @@ func (s *SetUsernameHandler) HandleMessage(message network.Message) error {
 		return err
 	}
 
+	// Store the username
+	err = s.userMessageStorage.PeerSetUsername(message.SenderID, message.ChatID, content.Username)
+	if err != nil {
+		fmt.Println("Error storing username")
+		return err
+	}
+
+	// Handle the username change
 	s.userChatLogic.PeerSetsUsername(message.SenderID, message.ChatID, content.Username)
 
 	return nil
@@ -2155,16 +2378,27 @@ import (
 	"github.com/google/uuid"
 	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_model"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/store"
 	"time"
 )
 
-type SyncRequestHandler struct {
+type syncRequestHandler struct {
+	syncStorage           store.SyncStoragePort
+	networkMessageStorage store.NetworkMessageStoragePort
+	messageSender         MessageSender
 }
 
-func (s *SyncRequestHandler) HandleMessage(message network.Message) error {
+func NewSyncRequestHandler(syncStorage store.SyncStoragePort, networkMessageStorage store.NetworkMessageStoragePort) *syncRequestHandler {
+	return &syncRequestHandler{
+		syncStorage:           syncStorage,
+		networkMessageStorage: networkMessageStorage,
+	}
+}
 
-	chatRepo := p_model.GetNetworkChatsInstance()
-	chatMessageRepo := chatRepo.GetChat(message.ChatID)
+func (s *syncRequestHandler) HandleMessage(message network.Message) error {
+
+	chatRepo := p_model.GetNetworkChatsInstance()       // TODO: change
+	chatMessageRepo := chatRepo.GetChat(message.ChatID) // TODO: change
 
 	// Parse the content of the message
 	/*
@@ -2187,8 +2421,8 @@ func (s *SyncRequestHandler) HandleMessage(message network.Message) error {
 	}
 
 	// Find difference between "message" already known messages and own messages that the other peer does not know
-	missingExternalMessages := chatMessageRepo.GetMissingExternalMessages(content.ExistingMessageIDs)
-	missingInternalMessages := chatMessageRepo.GetMissingInternalMessageIDs(content.ExistingMessageIDs)
+	missingExternalMessages := chatMessageRepo.GetMissingExternalMessages(content.ExistingMessageIDs)   // TODO: change
+	missingInternalMessages := chatMessageRepo.GetMissingInternalMessageIDs(content.ExistingMessageIDs) // TODO: change
 
 	// Convert missingExternalMessages to a JSON string
 	externalMessagesBytes, err := json.Marshal(missingExternalMessages)
@@ -2230,9 +2464,8 @@ func (s *SyncRequestHandler) HandleMessage(message network.Message) error {
 		Operation:       network.SYNC_REQUEST,
 	}
 
-	peer := GetPeerInstance()
-	peer.SendMessageToNetworkPeer("addressResponse", syncResponse)
-	peer.SendMessageToNetworkPeer("addressRequest", syncRequest)
+	s.messageSender.SendMessage("addressResponse", syncResponse)
+	s.messageSender.SendMessage("addressRequest", syncRequest)
 
 	return nil
 }
@@ -2245,17 +2478,23 @@ package messageHandlers
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_model"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/store"
 )
 
-type SyncResponseHandler struct {
+type syncResponseHandler struct {
+	networkMessageStorage store.NetworkMessageStoragePort
 }
 
-func (s *SyncResponseHandler) HandleMessage(message network.Message) error {
+func NewSyncResponseHandler(networkMessageStorage store.NetworkMessageStoragePort) *syncResponseHandler {
+	return &syncResponseHandler{
+		networkMessageStorage: networkMessageStorage,
+	}
+}
 
-	chatRepo := p_model.GetNetworkChatsInstance()
-	chatMessageRepo := chatRepo.GetChat(message.ChatID)
+func (s *syncResponseHandler) HandleMessage(message network.Message) error {
+	//chatRepo := p_model.GetNetworkChatsInstance() TODO: change
+	//chatMessageRepo := chatRepo.GetChat(message.ChatID) TODO: change
 
 	var receivedMessages []network.Message
 	err := json.Unmarshal([]byte(message.Content), &receivedMessages)
@@ -2264,8 +2503,15 @@ func (s *SyncResponseHandler) HandleMessage(message network.Message) error {
 		return err
 	}
 
-	for _, message := range receivedMessages {
-		chatMessageRepo.AddMessage(message)
+	for _, msg := range receivedMessages {
+		// Store the message
+		err = s.networkMessageStorage.StoreMessage(msg)
+		if err != nil {
+			fmt.Println("Error storing message:", err)
+			return err
+		}
+		// Add the message to the chat repository
+		//chatMessageRepo.AddMessage(msg) TODO: change
 	}
 
 	return nil
@@ -2306,6 +2552,62 @@ func (t *TestMessageHandler) HandleMessage(message network.Message) error {
 
 	fmt.Println("TestMessageHandler: ", message.Content)
 	return nil
+}
+
+
+------ /home/user/GolandProjects/Skunk/cmd/skunk/application/domain/p2p_network/p_service/messageHandlers/messageSender.go:
+
+package messageHandlers
+
+import (
+	"errors"
+	"fmt"
+	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_service"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+)
+
+// This has many problems right now.
+// For example is it only able to handle on connection. That means, while the peer is able to handle more, this is a bottleneck.
+// One could create multiple MessageSenders, but this is probably a bad idea.
+// Because, if done so, everything would need multiple messageSenders, or swap them for possibly ever message.
+// Still, being able to handle multiple networkConnections is not a requirement for the first release, and while many parts of the architecture support it, this will suffice.
+
+type MessageSender interface {
+	SendMessage(address string, message network.Message) error
+	SetNetworkConnection(networkConnection network.NetworkConnection)
+}
+
+type MessageSenderImpl struct {
+	networkConnection network.NetworkConnection
+	securityContext   p_service.SecurityValidater
+}
+
+func NewMessageSender(securityContext p_service.SecurityValidater) MessageSender {
+	return &MessageSenderImpl{
+		networkConnection: nil,
+		securityContext:   securityContext,
+	}
+}
+
+func (m *MessageSenderImpl) SendMessage(address string, message network.Message) error {
+	if m.networkConnection == nil {
+		return fmt.Errorf("no network connection is set")
+	}
+
+	if !m.securityContext.ValidateOutgoingMessage(message) {
+		return errors.New("invalid message")
+	}
+
+	err := m.networkConnection.SendMessageToNetworkPeer(address, message)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (m *MessageSenderImpl) SetNetworkConnection(networkConnection network.NetworkConnection) {
+	m.networkConnection = networkConnection
 }
 
 
@@ -2399,14 +2701,19 @@ type UserMessageStoragePort interface {
 
 type ChatActionStoragePort interface {
 	PeerJoinedChat(peerId string, chatId string) error
-	PeerLeftChat(peerId string, chatId string, senderId string, date int64) error
+	PeerLeftChat(peerId string, chatId string) error
 	ChatCreated(chatName string, chatId string) error
 }
 
+type PublicKeyAddress struct {
+	Address   string
+	PublicKey string
+}
+
 type ChatInvitationStoragePort interface {
-	InvitatedToChat(chatId string, chatName string, peers []string) error
+	InvitedToChat(messageID string, peers []PublicKeyAddress) error
 	PeerGotInvitedToChat(peerId string, chatId string) error
-	GetInvitations(peerId string) []string
+	GetInvitations(peerId string) ([]string, error)
 }
 
 type SyncStoragePort interface {
@@ -2612,478 +2919,6 @@ func TestSubscribeAndUnsubscribeToNetwork(t *testing.T) {
 
 	err = mockConnection.UnsubscribeFromNetwork(peer)
 	assert.NoError(t, err, "UnsubscribeFromNetwork() failed, expected nil, got error")
-}
-
-
------- /home/user/GolandProjects/Skunk/test/peer_test.go:
-
-package test
-
-import (
-	"context"
-	"fmt"
-	"testing"
-	"time"
-
-	"nhooyr.io/websocket"
-
-	"github.com/scherzma/Skunk/cmd/skunk/adapter/in/peer"
-	"github.com/scherzma/Skunk/cmd/skunk/adapter/in/tor"
-	"github.com/stretchr/testify/assert"
-)
-
-const (
-	waitTime = 1 * time.Second
-)
-
-func TestNewPeer(t *testing.T) {
-	peerInstance, err := peer.NewPeer("127.0.0.1", "8080", "", "")
-	assert.NoError(t, err)
-	assert.NotNil(t, peerInstance)
-	assert.Equal(t, peerInstance.Hostname, "127.0.0.1")
-	assert.Equal(t, peerInstance.Port, "8080")
-	assert.Equal(t, peerInstance.ProxyAddr, "")
-}
-
-func TestListen(t *testing.T) {
-	peerInstance, err := peer.NewPeer("127.0.0.1", "8080", "", "")
-	defer peerInstance.Shutdown()
-	assert.NoError(t, err)
-
-	peerInstance.Listen(nil)
-	time.Sleep(waitTime)
-
-	// Connecting to peer address should work
-	conn, _, err := websocket.Dial(context.Background(), "ws://127.0.0.1:8080", nil)
-	assert.NoError(t, err)
-	assert.NotNil(t, conn)
-
-	conn.Close(websocket.StatusNormalClosure, "test completed")
-}
-
-func TestConnect(t *testing.T) {
-	peer1, err := peer.NewPeer("127.0.0.1", "1234", "", "")
-	defer peer1.Shutdown()
-	peer2, err := peer.NewPeer("127.0.0.1", "4321", "", "")
-	defer peer2.Shutdown()
-
-	peer1.Listen(nil)
-	peer2.Listen(nil)
-	time.Sleep(waitTime)
-
-	// First connect from peer1 to peer2.
-	err = peer1.Connect(peer2.Address)
-	assert.NoError(t, err)
-
-	// Second connect from peer1 to peer2 should return an error because they have already been connected.
-	err = peer1.Connect(peer2.Address)
-	assert.Error(t, err)
-
-	// Connect from peer1 to peer1 should not work.
-	err = peer1.Connect(peer1.Address)
-	assert.Error(t, err)
-
-	// Connect from peer2 to peer1 should return an error because they have already been connected.
-	err = peer2.Connect(peer1.Address)
-	assert.Error(t, err)
-
-	// Should return an error, because "" is not a valid address
-	err = peer2.Connect("")
-	assert.Error(t, err)
-}
-
-func TestPeerSetWriteConn(t *testing.T) {
-	peer1, _ := peer.NewPeer("127.0.0.1", "1111", "", "")
-	defer peer1.Shutdown()
-	peer2, _ := peer.NewPeer("127.0.0.1", "10000", "", "")
-	defer peer2.Shutdown()
-
-	peer1.Listen(nil)
-	time.Sleep(waitTime)
-
-	err := peer2.Connect(peer1.Address)
-	time.Sleep(waitTime)
-
-	// First time setting the write conn to peer1.Address should work
-	err = peer2.SetWriteConn(peer1.Address)
-	assert.NoError(t, err)
-
-	// Setting the write conn to ones own address should not work
-	err = peer2.SetWriteConn(peer2.Address)
-	assert.Error(t, err)
-
-	// Setting the write conn to an address the peer is not connected to should not work
-	err = peer2.SetWriteConn("ws://127.0.0.1:9999")
-	assert.Error(t, err)
-
-	// Setting the write conn to "" should not work
-	err = peer2.SetWriteConn("")
-	assert.Error(t, err)
-}
-
-func TestPeerReadMessages(t *testing.T) {
-	peer1, _ := peer.NewPeer("127.0.0.1", "2222", "", "")
-	defer peer1.Shutdown()
-	peer2, _ := peer.NewPeer("127.0.0.1", "3333", "", "")
-	defer peer2.Shutdown()
-	peer3, _ := peer.NewPeer("127.0.0.1", "4444", "", "")
-	defer peer3.Shutdown()
-	peer4, _ := peer.NewPeer("127.0.0.1", "5555", "", "")
-	defer peer4.Shutdown()
-	peer5, _ := peer.NewPeer("127.0.0.1", "6666", "", "")
-	defer peer5.Shutdown()
-
-	peer1.Listen(nil)
-	time.Sleep(1 * time.Second)
-
-	address := peer1.Address
-	peer2.Connect(address)
-	peer3.Connect(address)
-	peer4.Connect(address)
-	peer5.Connect(address)
-
-	messageCh := make(chan string)
-	errorCh := make(chan error)
-	go peer1.ReadMessages(messageCh, errorCh)
-
-	peer2.SetWriteConn(address)
-	peer3.SetWriteConn(address)
-	peer4.SetWriteConn(address)
-	peer5.SetWriteConn(address)
-
-	// Reading a message from each connection should work
-	peer2.WriteMessage("Hello World!")
-	peer3.WriteMessage("This is the story of my life")
-	peer4.WriteMessage("Just do it!")
-	peer5.WriteMessage("ABCDEFGHIJKLM")
-
-	// Reading messages from the same connections again should work
-	peer2.WriteMessage("Hello Proxima Centauri!")
-	peer3.WriteMessage("Are you alright?")
-	peer4.WriteMessage("No I'm all left!")
-	peer5.WriteMessage("XYZ")
-
-	// Reading multiple messages from the same connection should work
-	peer2.WriteMessage("Recursive ...")
-	peer2.WriteMessage("Recursive ...")
-	peer2.WriteMessage("Recursive ...")
-	peer2.WriteMessage("Recursive ...")
-
-	// wait until all messages have been sent and received
-	time.Sleep(10 * time.Second)
-
-	// check that no error occured in this time
-	select {
-	case err := <-errorCh:
-		assert.NoError(t, err)
-	default:
-	}
-}
-
-func TestPeerWriteMessage(t *testing.T) {
-	peer1, _ := peer.NewPeer("127.0.0.1", "8888", "", "")
-	defer peer1.Shutdown()
-	peer2, _ := peer.NewPeer("127.0.0.1", "7890", "", "")
-	defer peer2.Shutdown()
-
-	peer1.Listen(nil)
-	time.Sleep(1 * time.Second)
-
-	peer2.Connect(peer1.Address)
-	peer2.SetWriteConn(peer1.Address)
-
-	messageCh := make(chan string)
-	errorCh := make(chan error)
-	go peer1.ReadMessages(messageCh, errorCh)
-
-	var tests = []struct {
-		name  string
-		input string
-		want  string
-	}{
-		{"numbers", "1234567890", fmt.Sprintf("From %s: 1234567890", peer2.Address)},
-		{"LETTERS", "ABCDEFGHIZ", fmt.Sprintf("From %s: ABCDEFGHIZ", peer2.Address)},
-		{"letters", "abcdefghiz", fmt.Sprintf("From %s: abcdefghiz", peer2.Address)},
-		{"special", "!?({&=$-:,", fmt.Sprintf("From %s: !?({&=$-:,", peer2.Address)},
-		{"weird", "\t\n\r¬² ", fmt.Sprintf("From %s: \t\n\r¬² ", peer2.Address)},
-		{"mixture", "abc123ABC!", fmt.Sprintf("From %s: abc123ABC!", peer2.Address)},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			peer2.WriteMessage(tt.input)
-
-			select {
-			case msg := <-messageCh:
-				assert.Equal(t, msg, tt.want)
-			case err := <-errorCh:
-				assert.NoError(t, err)
-			}
-		})
-	}
-}
-
-func TestPeerShutdown(t *testing.T) {
-	peerInstance, _ := peer.NewPeer("127.0.0.1", "1111", "", "")
-	defer peerInstance.Shutdown()
-
-	peerInstance.Listen(nil)
-	time.Sleep(waitTime)
-
-	peerInstance.Shutdown()
-
-	// After shutdown you shoudn't be able to connect to the peer
-	_, _, err := websocket.Dial(context.Background(), "ws://127.0.0.1:1111", nil)
-	assert.Error(t, err)
-
-	peerInstance.Listen(nil)
-	time.Sleep(waitTime)
-
-	// After executing Listen you should be able to connect to the peer again
-	conn, _, err := websocket.Dial(context.Background(), "ws://127.0.0.1:1111", nil)
-	assert.NoError(t, err)
-	assert.NotNil(t, conn)
-
-	conn.Close(websocket.StatusNormalClosure, "test completed")
-}
-
-func TestPeerHeartbeat(t *testing.T) {
-	peer1, _ := peer.NewPeer("127.0.0.1", "1111", "", "")
-	defer peer1.Shutdown()
-	peer2, _ := peer.NewPeer("127.0.0.1", "2222", "", "")
-
-	peer1.Listen(nil)
-	time.Sleep(waitTime)
-
-	peer2.Connect(peer1.Address)
-	time.Sleep(waitTime)
-
-	peer2.Shutdown()
-	time.Sleep(70 * time.Second)
-
-	// Should not work anymore, because hearbeat removed the closed connection
-	err := peer1.SetWriteConn(peer2.Address)
-	assert.Error(t, err)
-}
-
-// this test represents two peers exchanging a message over the tor network
-// because go-libtor can only start one tor process, we have to use one local installation of tor too
-func TestPeerTor(t *testing.T) {
-	// starts the non-embedded version of tor
-	conf := &tor.TorConfig{
-		DataDir:              "data-dir1",
-		SocksPort:            "9052",
-		LocalPort:            "1110",
-		RemotePort:           "1111",
-		DeleteDataDirOnClose: true,
-		UseEmbedded:          false,
-	}
-	myTorOne, err := tor.NewTor(conf)
-	assert.NoError(t, err)
-
-	err = myTorOne.StartTor()
-	assert.NoError(t, err)
-
-	onionOne, err := myTorOne.StartHiddenService()
-	assert.NoError(t, err)
-
-	peerInstanceOne, _ := peer.NewPeer(onionOne.ID+".onion", "1110", "1111", "127.0.0.1:9052")
-	defer peerInstanceOne.Shutdown()
-
-	peerInstanceOne.Listen(onionOne)
-	time.Sleep(1 * waitTime)
-
-	// starts the embedded version of tor
-	conf = &tor.TorConfig{
-		DataDir:              "data-dir2",
-		SocksPort:            "9053",
-		LocalPort:            "2221",
-		RemotePort:           "2222",
-		DeleteDataDirOnClose: true,
-		UseEmbedded:          false,
-	}
-	myTorTwo, err := tor.NewTor(conf)
-	assert.NoError(t, err)
-
-	err = myTorTwo.StartTor()
-	assert.NoError(t, err)
-
-	onionTwo, err := myTorTwo.StartHiddenService()
-	assert.NoError(t, err)
-
-	// wait for the hidden service to be published completely
-	time.Sleep(10 * time.Second)
-
-	peerInstanceTwo, _ := peer.NewPeer(onionTwo.ID+".onion", "2221", "2222", "127.0.0.1:9053")
-	defer peerInstanceTwo.Shutdown()
-
-	err = peerInstanceTwo.Connect(peerInstanceOne.Address)
-	assert.NoError(t, err)
-
-	peerInstanceTwo.SetWriteConn(peerInstanceOne.Address)
-
-	messageCh := make(chan string)
-	errorCh := make(chan error)
-
-	go peerInstanceOne.ReadMessages(messageCh, errorCh)
-
-	peerInstanceTwo.WriteMessage("Hello Dark World!")
-
-	// wait until message has been sent and received
-	time.Sleep(10 * time.Second)
-
-	// check that no error occured during this time
-	select {
-	case msg := <-messageCh:
-		t.Log(msg)
-	case err := <-errorCh:
-		assert.NoError(t, err)
-	default:
-	}
-
-	myTorOne.StopTor()
-	myTorTwo.StopTor()
-}
-
-
------- /home/user/GolandProjects/Skunk/test/tor_test.go:
-
-package test
-
-import (
-	"os"
-	"testing"
-	"time"
-
-	"github.com/scherzma/Skunk/cmd/skunk/adapter/in/tor"
-	"github.com/stretchr/testify/assert"
-)
-
-// The tests always use the embedded version of go
-// since this will also be the version we'll use in production
-
-func TestStartTor(t *testing.T) {
-	conf := &tor.TorConfig{
-		SocksPort:            "9070",
-		LocalPort:            "1111",
-		RemotePort:           "2222",
-		DeleteDataDirOnClose: true,
-		UseEmbedded:          false,
-	}
-	myTor, err := tor.NewTor(conf)
-	assert.NoError(t, err)
-
-	err = myTor.StartTor()
-	assert.NoError(t, err)
-
-	err = myTor.StopTor()
-	assert.NoError(t, err)
-}
-
-func TestStartHiddenService(t *testing.T) {
-	conf := &tor.TorConfig{
-		SocksPort:            "9080",
-		LocalPort:            "3333",
-		RemotePort:           "4444",
-		DeleteDataDirOnClose: true,
-		UseEmbedded:          false,
-	}
-	myTor, err := tor.NewTor(conf)
-	assert.NoError(t, err)
-
-	err = myTor.StartTor()
-	assert.NoError(t, err)
-
-	onion, err := myTor.StartHiddenService()
-	assert.NoError(t, err)
-	if assert.NotNil(t, onion) {
-		assert.NotNil(t, onion.LocalListener)
-		assert.NotNil(t, onion.RemotePorts)
-		assert.NotNil(t, onion.ID)
-	}
-
-	err = myTor.StopTor()
-	assert.NoError(t, err)
-}
-
-func TestStopTor(t *testing.T) {
-	dataDir := "test-data-dir"
-	conf := &tor.TorConfig{
-		DataDir:              dataDir,
-		SocksPort:            "9090",
-		LocalPort:            "5555",
-		RemotePort:           "6666",
-		DeleteDataDirOnClose: true,
-		UseEmbedded:          false,
-	}
-	myTor, err := tor.NewTor(conf)
-	assert.NoError(t, err)
-
-	err = myTor.StartTor()
-	assert.NoError(t, err)
-
-	err = myTor.StopTor()
-	assert.NoError(t, err)
-
-	// the dataDir-folder shouldn't exist anymore
-	_, err = os.Stat(dataDir)
-	assert.True(t, os.IsNotExist(err))
-}
-
-func TestReusePrivateKeyTor(t *testing.T) {
-	dataDir := "reuse-data-dir"
-	// configure tor to reuse the private key
-	conf := &tor.TorConfig{
-		DataDir:              dataDir,
-		SocksPort:            "9100",
-		LocalPort:            "1234",
-		RemotePort:           "4321",
-		DeleteDataDirOnClose: false,
-		ReusePrivateKey:      true,
-		UseEmbedded:          false,
-	}
-	myTor, err := tor.NewTor(conf)
-	assert.NoError(t, err)
-
-	err = myTor.StartTor()
-	assert.NoError(t, err)
-
-	onionOne, err := myTor.StartHiddenService()
-	assert.NoError(t, err)
-
-	onionIDOne := onionOne.ID
-
-	err = myTor.StopTor()
-	assert.NoError(t, err)
-
-	time.Sleep(5 * time.Second)
-
-	// restart tor hidden service
-	// and check if onionID is the same as before
-	conf = &tor.TorConfig{
-		DataDir:              dataDir,
-		SocksPort:            "9100",
-		LocalPort:            "5678",
-		RemotePort:           "1010",
-		DeleteDataDirOnClose: true,
-		ReusePrivateKey:      true,
-		UseEmbedded:          false,
-	}
-	myTor, err = tor.NewTor(conf)
-	assert.NoError(t, err)
-
-	err = myTor.StartTor()
-	assert.NoError(t, err)
-
-	onionTwo, err := myTor.StartHiddenService()
-	assert.NoError(t, err)
-
-	onionIDTwo := onionTwo.ID
-
-	err = myTor.StopTor()
-	assert.NoError(t, err)
-
-	assert.Equal(t, onionIDOne, onionIDTwo)
 }
 
 

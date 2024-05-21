@@ -27,7 +27,7 @@ func main() {
 
 	dbPath := "test.db"
 
-	adapter := storageSQLiteAdapter.NewStorageSQLiteAdapter(dbPath)
+	adapter := storageSQLiteAdapter.GetInstance(dbPath)
 
 	testMessages := []network.Message{
 		{
@@ -649,7 +649,7 @@ import (
 	"time"
 
 	"github.com/cretz/bine/tor"
-	"github.com/ipsn/go-libtor"
+	"github.com/ooni/go-libtor"
 )
 
 // TorConfig holds configuration parameters for a Tor instance.
@@ -908,15 +908,23 @@ import (
 	"fmt"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/store"
 	"log"
 	"strings"
+	"sync"
 )
 
 type StorageSQLiteAdapter struct {
 	db *sql.DB
 }
 
-func NewStorageSQLiteAdapter(dbPath string) *StorageSQLiteAdapter {
+var (
+	instance *StorageSQLiteAdapter
+	once     sync.Once
+)
+
+// NewStorageSQLiteAdapter creates a new instance of StorageSQLiteAdapter and initializes the database
+func newStorageSQLiteAdapter(dbPath string) *StorageSQLiteAdapter {
 	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
 		log.Fatal(err)
@@ -929,54 +937,30 @@ func NewStorageSQLiteAdapter(dbPath string) *StorageSQLiteAdapter {
 	return adapter
 }
 
-func (a *StorageSQLiteAdapter) CreateTables() {
-	tables := []string{
-		`CREATE TABLE IF NOT EXISTS Chats (
-			chat_id varchar(1024) not null constraint Chats_pk primary key,
-			name varchar(40) not null
-		)`,
-		`CREATE TABLE IF NOT EXISTS Peers (
-			peer_id integer not null constraint Peers_pk primary key autoincrement,
-			public_key varchar(1024) not null,
-			address varchar(1024) not null
-		)`,
-		`CREATE TABLE IF NOT EXISTS ChatMembers (
-			chat_member_id integer not null constraint ChatMembers_pk primary key autoincrement,
-			date datetime not null,
-			peer_id varchar(1024) not null constraint ChatMembers_Peers_peer_id_fk references Peers on update cascade,
-			chat_id varchar(1024) not null constraint ChatMembers_Chats_chat_id_fk references Chats on update cascade,
-			username varchar(50)
-		)`,
-		`CREATE TABLE IF NOT EXISTS Messages (
-			message_id varchar(1024) not null constraint Messages_pk primary key,
-			content text,
-			date datetime not null,
-			operation integer not null,
-			sender_peer_id varchar(1024) not null constraint Messages_Peers_peer_id_fk references Peers on update cascade,
-			chat_id varchar(1024) not null constraint Messages_Chats_chat_id_fk references Chats on update cascade,
-			receiver_peer_id varchar(1024) not null constraint Messages_Peers_peer_id_fk_2 references Peers,
-			sender_address varchar(1024) not null,
-			receiver_address varchar(1024) not null
-		)`,
-		`CREATE TABLE IF NOT EXISTS Invitations (
-			invitation_id integer not null constraint Invitations_pk primary key autoincrement,
-			invitation_status integer not null,
-			message_id varchar(1024) not null constraint Invitations_Messages_message_id_fk references Messages
-		)`,
-		`CREATE TABLE IF NOT EXISTS PeersInInvitedChat (
-			public_key varchar(1024) not null,
-			invited_peer_id integer not null constraint PeersInInvitedChat_pk primary key autoincrement,
-			address varchar(1024) not null,
-			invitation_id integer not null constraint PeersInInvitedChat_Invitations_invitation_id_fk references Invitations
-		)`,
-	}
+// GetInstance returns the singleton instance of StorageSQLiteAdapter
+func GetInstance(dbPath string) *StorageSQLiteAdapter {
+	once.Do(func() {
+		instance = newStorageSQLiteAdapter(dbPath)
+	})
+	return instance
+}
 
-	for _, table := range tables {
-		_, err := a.db.Exec(table)
-		if err != nil {
-			log.Fatal(err)
-		}
+func (a *StorageSQLiteAdapter) CreateTables() {
+	sqlCommands := "CREATE TABLE IF NOT EXISTS Chats (\n    chat_id VARCHAR(1024) NOT NULL CONSTRAINT Chats_pk PRIMARY KEY,\n    name VARCHAR(40) NOT NULL\n);\n\nCREATE TABLE IF NOT EXISTS Peers (\n    peer_id INTEGER NOT NULL CONSTRAINT Peers_pk PRIMARY KEY AUTOINCREMENT,\n    public_key VARCHAR(1024) NOT NULL,\n    address VARCHAR(1024) NOT NULL\n);\n\nCREATE TABLE IF NOT EXISTS ChatMembers (\n    chat_member_id INTEGER NOT NULL CONSTRAINT ChatMembers_pk PRIMARY KEY AUTOINCREMENT,\n    date INTEGER NOT NULL,\n    peer_id VARCHAR(1024) NOT NULL CONSTRAINT ChatMembers_Peers_peer_id_fk REFERENCES Peers ON UPDATE CASCADE,\n    chat_id VARCHAR(1024) NOT NULL CONSTRAINT ChatMembers_Chats_chat_id_fk REFERENCES Chats ON UPDATE CASCADE,\n    username VARCHAR(50)\n);\n\nCREATE TABLE IF NOT EXISTS Messages (\n    message_id VARCHAR(1024) NOT NULL CONSTRAINT Messages_pk PRIMARY KEY,\n    content TEXT,\n    date INTEGER NOT NULL,\n    operation INTEGER NOT NULL,\n    sender_peer_id VARCHAR(1024) NOT NULL CONSTRAINT Messages_Peers_peer_id_fk REFERENCES Peers ON UPDATE CASCADE,\n    chat_id VARCHAR(1024) NOT NULL CONSTRAINT Messages_Chats_chat_id_fk REFERENCES Chats ON UPDATE CASCADE,\n    receiver_peer_id VARCHAR(1024) NOT NULL CONSTRAINT Messages_Peers_peer_id_fk_2 REFERENCES Peers,\n    sender_address VARCHAR(1024) NOT NULL,\n    receiver_address VARCHAR(1024) NOT NULL\n);\n\nCREATE TABLE IF NOT EXISTS Invitations (\n    invitation_id INTEGER NOT NULL CONSTRAINT Invitations_pk PRIMARY KEY AUTOINCREMENT,\n    invitation_status INTEGER NOT NULL,\n    message_id VARCHAR(1024) NOT NULL CONSTRAINT Invitations_Messages_message_id_fk REFERENCES Messages\n);\n\nCREATE TABLE IF NOT EXISTS PeersInInvitedChat (\n    public_key VARCHAR(1024) NOT NULL,\n    invited_peer_id INTEGER NOT NULL CONSTRAINT PeersInInvitedChat_pk PRIMARY KEY AUTOINCREMENT,\n    address VARCHAR(1024) NOT NULL,\n    invitation_id INTEGER NOT NULL CONSTRAINT PeersInInvitedChat_Invitations_invitation_id_fk REFERENCES Invitations\n);\n"
+	_, err := a.db.Exec(sqlCommands)
+	if err != nil {
+		log.Fatal(err)
 	}
+}
+
+func (a *StorageSQLiteAdapter) ChatCreated(chatName string, chatId string) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (a *StorageSQLiteAdapter) PeerSetUsername(peerId string, chatId string, username string) error {
+	//TODO implement me
+	panic("implement me")
 }
 
 func (a *StorageSQLiteAdapter) SetPeerUsername(username, peerID, chatID string) error {
@@ -1023,12 +1007,7 @@ func (a *StorageSQLiteAdapter) CreateChat(chatID, name string) error {
 	return err
 }
 
-type PublicKeyAddress struct {
-	Address   string
-	PublicKey string
-}
-
-func (a *StorageSQLiteAdapter) InvitedToChat(messageID string, peers []PublicKeyAddress) error {
+func (a *StorageSQLiteAdapter) InvitedToChat(messageID string, peers []store.PublicKeyAddress) error {
 	tx, err := a.db.Begin()
 	if err != nil {
 		return err
@@ -1063,7 +1042,7 @@ func (a *StorageSQLiteAdapter) InvitedToChat(messageID string, peers []PublicKey
 	return err
 }
 
-func (a *StorageSQLiteAdapter) PeerGotInvitedToChat(peerID, chatID string) error {
+func (a *StorageSQLiteAdapter) PeerGotInvitedToChat(peerId string, chatId string) error {
 	// Implement the logic to store a peer getting invited to a chat in the database
 	// ...
 	return nil
@@ -1164,7 +1143,7 @@ func (a *StorageSQLiteAdapter) StoreMessage(message network.Message) error {
 
 	stmt, err := a.db.Prepare(`
         INSERT INTO Messages (message_id, date, content, sender_peer_id, receiver_peer_id, sender_address, receiver_address, chat_id, operation)
-        SELECT ?, datetime('now'), ?, (SELECT peer_id FROM Peers WHERE public_key = ?), (SELECT peer_id FROM Peers WHERE public_key = ?), ?, ?, ?, ?
+        SELECT ?, ?, ?, (SELECT peer_id FROM Peers WHERE public_key = ?), (SELECT peer_id FROM Peers WHERE public_key = ?), ?, ?, ?, ?
         WHERE NOT EXISTS (SELECT 1 FROM Messages WHERE message_id = ?)
     `)
 	if err != nil {
@@ -1173,7 +1152,7 @@ func (a *StorageSQLiteAdapter) StoreMessage(message network.Message) error {
 	defer stmt.Close()
 
 	_, err = stmt.Exec(
-		message.Id, message.Content, message.SenderID, message.ReceiverID,
+		message.Id, message.Timestamp, message.Content, message.SenderID, message.ReceiverID,
 		message.SenderAddress, message.ReceiverAddress, message.ChatID, message.Operation, message.Id,
 	)
 	return err
@@ -1196,8 +1175,9 @@ func (a *StorageSQLiteAdapter) insertPeerIfNotExists(publicKey, address string) 
 
 func (a *StorageSQLiteAdapter) RetrieveMessage(messageID string) (network.Message, error) {
 	row := a.db.QueryRow(`
-		SELECT message_id, strftime('%s', date), content, operation, sender_peer_id, receiver_peer_id, sender_address, receiver_address, chat_id
-		FROM Messages WHERE message_id = ?
+		SELECT m.message_id, m.date, m.content, m.operation, p.public_key, p2.public_key, m.sender_address, m.receiver_address, m.chat_id
+		FROM Messages m, Peers p, Peers p2
+		WHERE message_id = ? AND m.sender_peer_id = p.peer_id AND m.receiver_peer_id = p2.peer_id
 	`, messageID)
 
 	var message network.Message
@@ -1212,22 +1192,17 @@ func (a *StorageSQLiteAdapter) RetrieveMessage(messageID string) (network.Messag
 	return message, nil
 }
 
-type Chat struct {
-	ChatID string
-	Name   string
-}
-
-func (a *StorageSQLiteAdapter) GetChats() ([]Chat, error) {
+func (a *StorageSQLiteAdapter) GetChats() ([]store.Chat, error) {
 	rows, err := a.db.Query("SELECT chat_id, name FROM Chats")
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var chats []Chat
+	var chats []store.Chat
 	for rows.Next() {
-		var chat Chat
-		err := rows.Scan(&chat.ChatID, &chat.Name)
+		var chat store.Chat
+		err := rows.Scan(&chat.ChatId, &chat.ChatName)
 		if err != nil {
 			return nil, err
 		}
@@ -1249,23 +1224,17 @@ func (a *StorageSQLiteAdapter) GetUsername(peerID, chatID string) (string, error
 	return username, nil
 }
 
-type User struct {
-	PeerID   string
-	ChatID   string
-	Username string
-}
-
-func (a *StorageSQLiteAdapter) GetUsersInChat(chatID string) ([]User, error) {
+func (a *StorageSQLiteAdapter) GetUsersInChat(chatID string) ([]store.User, error) {
 	rows, err := a.db.Query("SELECT peer_id, chat_id, username FROM ChatMembers WHERE chat_id = ?", chatID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var users []User
+	var users []store.User
 	for rows.Next() {
-		var user User
-		err := rows.Scan(&user.PeerID, &user.ChatID, &user.Username)
+		var user store.User
+		err := rows.Scan(&user.UserId, &user.Username)
 		if err != nil {
 			return nil, err
 		}
@@ -1297,9 +1266,9 @@ func (a *StorageSQLiteAdapter) GetPeers() ([]string, error) {
 
 func (a *StorageSQLiteAdapter) GetChatMessages(chatID string) ([]network.Message, error) {
 	rows, err := a.db.Query(`
-		SELECT message_id, content, date, operation, sender_peer_id, chat_id, receiver_peer_id, sender_address, receiver_address
-		FROM Messages
-		WHERE chat_id = ?
+		SELECT m.message_id, m.content, m.date, m.operation, p.public_key, m.chat_id, p2.public_key, m.sender_address, m.receiver_address
+		FROM Messages m, Peers p, Peers p2
+		WHERE chat_id = ? AND m.sender_peer_id = p.peer_id AND m.receiver_peer_id = p2.peer_id
 	`, chatID)
 	if err != nil {
 		return nil, err
@@ -1387,7 +1356,7 @@ __________ ./skunk/application/domain/chat/chatLogicInterface.go:
 package chat
 
 type ChatLogic interface {
-	RecieveMessage(senderId string, chatId string, message string) error
+	ReceiveMessage(senderId string, chatId string, message string) error
 	ReceiveChatInvitation(senderId string, chatId string, chatName string, chatMembers []string) error
 	PeerLeavesChat(senderId string, chatId string) error
 	PeerJoinsChat(senderId string, chatId string) error
@@ -1618,144 +1587,124 @@ __________ ./skunk/application/domain/p2p_network/p_service/securityService.go:
 
 package p_service
 
-import "github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+import (
+	"encoding/json"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/store"
+)
 
-type SecurityContext struct {
+type SecurityValidater interface {
+	ValidateOutgoingMessage(message network.Message) bool
+	ValidateIncomingMessage(message network.Message) bool
+	ValidatePeer(peer string) bool
 }
 
 // SecurityContext is a service that provides security checks for the network
 // It should be possible to implement all security checks in this service
+// TODO: put a bit more thought into this
+type SecurityContext struct {
+	store           store.ChatInvitationStoragePort
+	chatActionStore store.ChatActionStoragePort
+	displayStorage  store.DisplayStoragePort
+}
+
+func NewSecurityContext(displayStorage store.DisplayStoragePort, store store.ChatInvitationStoragePort, chatActionStore store.ChatActionStoragePort) *SecurityContext {
+	return &SecurityContext{
+		store:           store,
+		chatActionStore: chatActionStore,
+		displayStorage:  displayStorage,
+	}
+}
 
 func (s *SecurityContext) ValidateOutgoingMessage(message network.Message) bool {
 	return true
 }
 
 func (s *SecurityContext) ValidateIncomingMessage(message network.Message) bool {
-	return true
+	switch message.Operation {
+	case network.SEND_MESSAGE:
+		return s.isMemberOfChat(message.SenderID, message.ChatID)
+	case network.SYNC_REQUEST:
+		return s.isMemberOfChat(message.SenderID, message.ChatID)
+	case network.SYNC_RESPONSE:
+		return s.validateSyncResponseMessages(message)
+	case network.JOIN_CHAT:
+		return s.hasValidInvitation(message.SenderID, message.ChatID)
+	case network.LEAVE_CHAT:
+		return s.isMemberOfChat(message.SenderID, message.ChatID)
+	case network.INVITE_TO_CHAT:
+		return true
+	case network.SEND_FILE:
+		return s.isMemberOfChat(message.SenderID, message.ChatID)
+	case network.SET_USERNAME:
+		return s.isMemberOfChat(message.SenderID, message.ChatID)
+	default:
+		return false
+	}
 }
 
 func (s *SecurityContext) ValidatePeer(peer string) bool {
 	return true
 }
 
-
-__________ ./skunk/application/domain/p2p_network/p_service/messageHandlers/inviteToChatHandler.go:
-
-package messageHandlers
-
-import (
-	"encoding/json"
-	"fmt"
-	"github.com/scherzma/Skunk/cmd/skunk/application/domain/chat"
-	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
-)
-
-// This Peer gets invited to a chat
-type InviteToChatHandler struct {
-	userChatLogic chat.ChatLogic
-}
-
-func (i *InviteToChatHandler) HandleMessage(message network.Message) error {
-
-	// Structure of the message:
-	/*
-		{
-			"chatId": "asdf",
-			"chatName": "asdf",
-			"peers": [
-				"asdf",
-				"asdf"
-			]
-		}
-	*/
-
-	var content struct {
-		ChatID   string `json:"chatId"`
-		ChatName string `json:"chatName"`
-		Peers    []string
-	}
-
-	err := json.Unmarshal([]byte(message.Content), &content)
+// Helper methods for security checks
+func (s *SecurityContext) isMemberOfChat(peerID, chatID string) bool {
+	members, err := s.displayStorage.GetUsersInChat(chatID)
 	if err != nil {
-		fmt.Println("Error unmarshalling message content")
-		return err
+		return false
 	}
 
-	i.userChatLogic.ReceiveChatInvitation(message.SenderID, content.ChatID, content.ChatName, content.Peers)
-	//TODO store received chat invitation for later use
-	// For example: if the user wants to join the chat
+	for _, member := range members {
+		if member.UserId == peerID {
+			return true
+		}
+	}
 
-	return nil
+	return false
+}
+
+func (s *SecurityContext) hasValidInvitation(peerID, chatID string) bool {
+	invitations, err := s.store.GetInvitations(peerID)
+	if err != nil {
+		return false
+	}
+
+	for _, invitation := range invitations {
+		if invitation == chatID {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (s *SecurityContext) validateSyncResponseMessages(message network.Message) bool {
+	var receivedMessages []network.Message
+	err := json.Unmarshal([]byte(message.Content), &receivedMessages)
+	if err != nil {
+		return false
+	}
+
+	for _, msg := range receivedMessages {
+		if msg.SenderID != message.SenderID {
+			return false
+		}
+	}
+
+	return true
 }
 
 
-__________ ./skunk/application/domain/p2p_network/p_service/messageHandlers/joinChatHandler.go:
+__________ ./skunk/application/domain/p2p_network/p_service/peer.go:
 
-package messageHandlers
-
-import (
-	"github.com/scherzma/Skunk/cmd/skunk/application/domain/chat"
-	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
-)
-
-// A Peer joins a chat
-type JoinChatHandler struct {
-	userChatLogic chat.ChatLogic
-}
-
-func (j *JoinChatHandler) HandleMessage(message network.Message) error {
-
-	j.userChatLogic.PeerJoinsChat(message.SenderID, message.ChatID)
-	//TODO make the necessary changes to the chat (SQLite (with interface of course))
-
-	return nil
-}
-
-
-__________ ./skunk/application/domain/p2p_network/p_service/messageHandlers/leaveChatHandler.go:
-
-package messageHandlers
-
-import (
-	"github.com/scherzma/Skunk/cmd/skunk/application/domain/chat"
-	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
-)
-
-// A Peer leaves a chat
-type LeaveChatHandler struct {
-	userChatLogic chat.ChatLogic
-}
-
-func (l *LeaveChatHandler) HandleMessage(message network.Message) error {
-
-	l.userChatLogic.PeerLeavesChat(message.SenderID, message.ChatID)
-	//TODO make the necessary changes to the chat (SQLite (with interface of course))
-
-	return nil
-}
-
-
-__________ ./skunk/application/domain/p2p_network/p_service/messageHandlers/messageHandlerInterface.go:
-
-package messageHandlers
-
-import "github.com/scherzma/Skunk/cmd/skunk/application/port/network"
-
-type MessageHandler interface {
-	HandleMessage(message network.Message) error
-}
-
-
-__________ ./skunk/application/domain/p2p_network/p_service/messageHandlers/peer.go:
-
-package messageHandlers
+package p_service
 
 import (
 	"errors"
 	"github.com/scherzma/Skunk/cmd/skunk/adapter/out/storage/storageSQLiteAdapter"
-	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_model"
-	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_service"
+	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_service/messageHandlers"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/store"
 	"sync"
 )
 
@@ -1765,41 +1714,54 @@ var (
 )
 
 type Peer struct {
-	Chats           p_model.NetworkChats
-	handlers        map[network.OperationType]MessageHandler
+	handlers        map[network.OperationType]messageHandlers.MessageHandler
 	connections     []network.NetworkConnection
-	securityContext p_service.SecurityContext
+	securityContext SecurityValidater
+	storage         store.NetworkMessageStoragePort
+	messageSender   messageHandlers.MessageSender
 }
 
 func GetPeerInstance() *Peer {
 	once.Do(func() {
-		handlers := map[network.OperationType]MessageHandler{
-			network.JOIN_CHAT:      &JoinChatHandler{},
-			network.SEND_FILE:      &SendFileHandler{},
-			network.SYNC_REQUEST:   &SyncRequestHandler{},
-			network.SYNC_RESPONSE:  &SyncResponseHandler{},
-			network.SET_USERNAME:   &SetUsernameHandler{},
-			network.SEND_MESSAGE:   &SendMessageHandler{},
-			network.INVITE_TO_CHAT: &InviteToChatHandler{},
-			network.LEAVE_CHAT:     &LeaveChatHandler{},
-			network.TEST_MESSAGE:   &TestMessageHandler{},
-			network.TEST_MESSAGE_2: &TestMessageHandler2{},
+		storage := storageSQLiteAdapter.GetInstance("skunk.db")
+		securityContext := NewSecurityContext(storage, storage, storage)
+		sender := messageHandlers.NewMessageSender(securityContext)
+
+		handlers := map[network.OperationType]messageHandlers.MessageHandler{
+			network.JOIN_CHAT:      messageHandlers.NewJoinChatHandler(nil, storage),
+			network.SEND_FILE:      messageHandlers.NewSendFileHandler(nil, storage),
+			network.SYNC_REQUEST:   messageHandlers.NewSyncRequestHandler(nil, storage),
+			network.SYNC_RESPONSE:  messageHandlers.NewSyncResponseHandler(storage),
+			network.SET_USERNAME:   messageHandlers.NewSetUsernameHandler(nil, storage),
+			network.SEND_MESSAGE:   messageHandlers.NewSendMessageHandler(nil, storage),
+			network.INVITE_TO_CHAT: messageHandlers.NewInviteToChatHandler(nil, storage),
+			network.LEAVE_CHAT:     messageHandlers.NewLeaveChatHandler(nil, storage),
+			network.TEST_MESSAGE:   &messageHandlers.TestMessageHandler{},
+			network.TEST_MESSAGE_2: &messageHandlers.TestMessageHandler2{},
 		}
 
 		peerInstance = &Peer{
-			Chats:           p_model.NetworkChats{},
 			handlers:        handlers,
 			connections:     []network.NetworkConnection{},
-			securityContext: p_service.SecurityContext{},
+			securityContext: securityContext,
+			storage:         storage,
+			messageSender:   *sender,
 		}
 	})
 
 	return peerInstance
 }
 
-func (p *Peer) AddNetworkConnection(connection network.NetworkConnection) {
+func (p *Peer) AddNetworkConnection(connection network.NetworkConnection) error {
+	if len(p.connections) > 0 {
+		return errors.New("connection already exists, multiple connections are not supported so far")
+	}
+
 	p.connections = append(p.connections, connection)
 	connection.SubscribeToNetwork(p)
+	p.messageSender.SetNetworkConnection(connection)
+
+	return nil
 }
 
 func (p *Peer) RemoveNetworkConnection(connection network.NetworkConnection) {
@@ -1818,29 +1780,61 @@ func (p *Peer) Notify(message network.Message) error {
 			return errors.New("invalid message")
 		}
 
-		storage := storageSQLiteAdapter.NewStorageSQLiteAdapter("test.db")
-		storage.StoreMessage(message)
+		p.storage.StoreMessage(message)
 		return handler.HandleMessage(message)
 	}
 	return errors.New("invalid message operation")
 }
 
-func (p *Peer) SendMessageToNetworkPeer(address string, message network.Message) error {
 
-	if !p.securityContext.ValidateOutgoingMessage(message) {
-		return errors.New("invalid message")
-	}
+__________ ./skunk/application/domain/p2p_network/p_service/chatToNetwork.go:
 
-	for _, connection := range p.connections {
-		if err := connection.SendMessageToNetworkPeer(address, message); err != nil {
-			return err
-		}
+package p_service
+
+import (
+	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_service/messageHandlers"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/store"
+)
+
+type ChatToNetwork struct {
+	sender            *messageHandlers.MessageSender
+	chatActionStorage *store.ChatActionStoragePort
+}
+
+func (c *ChatToNetwork) CreateChat(chatId string, chatName string) error {
+	err := c.chatActionStorage.ChatCreated(chatName, chatId)
+	if err != nil {
+		return err
 	}
 	return nil
 }
 
+func (c *ChatToNetwork) JoinChat(chatId string) error {
+	return nil
+}
 
-__________ ./skunk/application/domain/p2p_network/p_service/messageHandlers/sendFileHandler.go:
+func (c *ChatToNetwork) LeaveChat(chatId string) error {
+	return nil
+}
+
+func (c *ChatToNetwork) InviteToChat(chatId string, peerId string) error {
+	return nil
+}
+
+func (c *ChatToNetwork) SendFileToChat(chatId string, filePath string) error {
+	return nil
+}
+
+func (c *ChatToNetwork) SetUsernameInChat(chatId string, username string) error {
+	return nil
+}
+
+func (c *ChatToNetwork) SendMessageToChat(chatId string, message string) error {
+	return nil
+}
+
+
+__________ ./skunk/application/domain/p2p_network/p_service/messageHandlers/inviteToChatHandler.go:
 
 package messageHandlers
 
@@ -1849,24 +1843,45 @@ import (
 	"fmt"
 	"github.com/scherzma/Skunk/cmd/skunk/application/domain/chat"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/store"
 )
 
-// A Peer sends a file to a chat
-type SendFileHandler struct {
-	userChatLogic chat.ChatLogic
+// InviteToChatHandler handles invitations for a peer to join a chat
+type InviteToChatHandler struct {
+	userChatLogic         chat.ChatLogic
+	chatInvitationStorage store.ChatInvitationStoragePort
 }
 
-func (s *SendFileHandler) HandleMessage(message network.Message) error {
+// NewInviteToChatHandler creates a new InviteToChatHandler
+func NewInviteToChatHandler(userChatLogic chat.ChatLogic, chatInvitationStorage store.ChatInvitationStoragePort) *InviteToChatHandler {
+	return &InviteToChatHandler{
+		userChatLogic:         userChatLogic,
+		chatInvitationStorage: chatInvitationStorage,
+	}
+}
 
-	// Structure of the message:
+// HandleMessage processes the chat invitation message
+func (i *InviteToChatHandler) HandleMessage(message network.Message) error {
+
+	// Message structure:
 	/*
 		{
-			"fileContent": []byte("asdfasdfasdf"),
+			"chatId": "chat_id",
+			"chatName": "chat_name",
+			"peers": [
+				{
+					"address": "peer_address",
+					"publicKey": "peer_public_key"
+				},
+				...
+			]
 		}
 	*/
 
 	var content struct {
-		FileContent []byte `json:"fileContent"`
+		ChatID   string                   `json:"chatId"`
+		ChatName string                   `json:"chatName"`
+		Peers    []store.PublicKeyAddress `json:"peers"`
 	}
 
 	err := json.Unmarshal([]byte(message.Content), &content)
@@ -1875,12 +1890,253 @@ func (s *SendFileHandler) HandleMessage(message network.Message) error {
 		return err
 	}
 
-	s.userChatLogic.ReceiveFile(message.SenderID, message.ChatID, string(content.FileContent))
-	//TODO that's not the right way to do it
-	// The file should be stored in a file system
-	// Also "ReceiveFile" should receive the file path instead of the file content
+	// Store the chat invitation details
+	err = i.chatInvitationStorage.InvitedToChat(message.Id, content.Peers)
+	if err != nil {
+		return err
+	}
+
+	// Extract addresses from peers
+	peerAddresses := make([]string, len(content.Peers))
+	for idx, peer := range content.Peers {
+		peerAddresses[idx] = peer.Address
+	}
+
+	// Notify the chat logic of the received invitation
+	i.userChatLogic.ReceiveChatInvitation(message.SenderID, content.ChatID, content.ChatName, peerAddresses)
 
 	return nil
+}
+
+
+__________ ./skunk/application/domain/p2p_network/p_service/messageHandlers/joinChatHandler.go:
+
+package messageHandlers
+
+import (
+	"fmt"
+	"github.com/scherzma/Skunk/cmd/skunk/application/domain/chat"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/store"
+)
+
+// A Peer joins a chat
+type joinChatHandler struct {
+	userChatLogic     chat.ChatLogic
+	chatActionStorage store.ChatActionStoragePort
+}
+
+func NewJoinChatHandler(userChatLogic chat.ChatLogic, chatActionStorage store.ChatActionStoragePort) *joinChatHandler {
+	return &joinChatHandler{
+		userChatLogic:     userChatLogic,
+		chatActionStorage: chatActionStorage,
+	}
+}
+
+func (j *joinChatHandler) HandleMessage(message network.Message) error {
+
+	// Update chat invitation storage
+	err := j.chatActionStorage.PeerJoinedChat(message.SenderID, message.ChatID)
+	if err != nil {
+		fmt.Println("Error updating chat invitation storage")
+		return err
+	}
+
+	// Handle peer joining the chat
+	j.userChatLogic.PeerJoinsChat(message.SenderID, message.ChatID)
+
+	return nil
+}
+
+
+__________ ./skunk/application/domain/p2p_network/p_service/messageHandlers/leaveChatHandler.go:
+
+package messageHandlers
+
+import (
+	"fmt"
+	"github.com/scherzma/Skunk/cmd/skunk/application/domain/chat"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/store"
+)
+
+// A Peer leaves a chat
+type leaveChatHandler struct {
+	userChatLogic     chat.ChatLogic
+	chatActionStorage store.ChatActionStoragePort
+}
+
+func NewLeaveChatHandler(userChatLogic chat.ChatLogic, chatActionStorage store.ChatActionStoragePort) *leaveChatHandler {
+	return &leaveChatHandler{
+		userChatLogic:     userChatLogic,
+		chatActionStorage: chatActionStorage,
+	}
+}
+
+func (l *leaveChatHandler) HandleMessage(message network.Message) error {
+
+	// Update chat invitation storage and remove the peer from the chat
+	err := l.chatActionStorage.PeerLeftChat(message.SenderID, message.ChatID)
+	if err != nil {
+		fmt.Println("Error updating chat invitation storage")
+		return err
+	}
+
+	// Handle peer leaving the chat
+	l.userChatLogic.PeerLeavesChat(message.SenderID, message.ChatID)
+
+	return nil
+}
+
+
+__________ ./skunk/application/domain/p2p_network/p_service/messageHandlers/messageHandlerInterface.go:
+
+package messageHandlers
+
+import "github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+
+type MessageHandler interface {
+	HandleMessage(message network.Message) error
+}
+
+
+__________ ./skunk/application/domain/p2p_network/p_service/messageHandlers/sendFileHandler.go:
+
+package messageHandlers
+
+import (
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"github.com/scherzma/Skunk/cmd/skunk/application/domain/chat"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/store"
+	"io"
+	"os"
+	"path/filepath"
+)
+
+// A Peer sends a file to a chat
+type sendFileHandler struct {
+	userChatLogic         chat.ChatLogic
+	chatInvitationStorage store.ChatInvitationStoragePort
+}
+
+func NewSendFileHandler(userChatLogic chat.ChatLogic, chatInvitationStorage store.ChatInvitationStoragePort) *sendFileHandler {
+	return &sendFileHandler{
+		userChatLogic:         userChatLogic,
+		chatInvitationStorage: chatInvitationStorage,
+	}
+}
+
+func (s *sendFileHandler) HandleMessage(message network.Message) error {
+
+	// Structure of the message (fileContent is base64 encoded):
+	/*
+		{
+			"fileName": "file_name",
+			"fileExtension": "file_extension",
+			"fileContent": "YmFzZTY0c3RyaW5n",
+		}
+	*/
+
+	var content struct {
+		FileName      string `json:"fileName"`
+		FileExtension string `json:"fileExtension"`
+		FileContent   string `json:"fileContent"`
+	}
+
+	err := json.Unmarshal([]byte(message.Content), &content)
+	if err != nil {
+		fmt.Println("Error unmarshalling message content")
+		return err
+	}
+
+	// Decode the base64-encoded file content
+	fileData, err := base64.StdEncoding.DecodeString(content.FileContent)
+	if err != nil {
+		fmt.Println("Error decoding file content")
+		return err
+	}
+
+	// Create a directory for storing the files if it doesn't exist
+	fileDir := "./stored_files"
+	if err := os.MkdirAll(fileDir, os.ModePerm); err != nil {
+		fmt.Println("Error creating file directory")
+		return err
+	}
+
+	// Create the file path
+	filePath := filepath.Join(fileDir, fmt.Sprintf("%s.%s", content.FileName, content.FileExtension))
+
+	// Check if the file already exists
+	if _, err := os.Stat(filePath); err == nil {
+		// File exists, compare hashes
+		existingHash, err := computeFileHash(filePath)
+		if err != nil {
+			fmt.Println("Error computing hash of existing file")
+			return err
+		}
+
+		newFileHash := computeHash(fileData)
+		if existingHash == newFileHash {
+			// Hashes are the same, use the existing file
+			s.userChatLogic.ReceiveFile(message.SenderID, message.ChatID, filePath)
+			return nil
+		} else {
+			// Hashes are different, modify the file name
+			filePath = getUniqueFilePath(fileDir, content.FileName, content.FileExtension)
+		}
+	}
+
+	// Write the file data to the file
+	if err := os.WriteFile(filePath, fileData, os.ModePerm); err != nil {
+		fmt.Println("Error writing file to filesystem")
+		return err
+	}
+
+	// Notify the chat logic of the received file with the file path
+	s.userChatLogic.ReceiveFile(message.SenderID, message.ChatID, filePath)
+
+	return nil
+}
+
+// computeFileHash computes the SHA-256 hash of a file
+func computeFileHash(filePath string) (string, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	hash := sha256.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return "", err
+	}
+
+	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+// computeHash computes the SHA-256 hash of the given data
+func computeHash(data []byte) string {
+	hash := sha256.New()
+	hash.Write(data)
+	return hex.EncodeToString(hash.Sum(nil))
+}
+
+// getUniqueFilePath generates a unique file path by appending a counter to the file name
+func getUniqueFilePath(dir, baseName, ext string) string {
+	counter := 1
+	for {
+		newFileName := fmt.Sprintf("%s_%d.%s", baseName, counter, ext)
+		newFilePath := filepath.Join(dir, newFileName)
+		if _, err := os.Stat(newFilePath); os.IsNotExist(err) {
+			return newFilePath
+		}
+		counter++
+	}
 }
 
 
@@ -1893,13 +2149,22 @@ import (
 	"fmt"
 	"github.com/scherzma/Skunk/cmd/skunk/application/domain/chat"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/store"
 )
 
-type SendMessageHandler struct {
-	userChatLogic chat.ChatLogic
+type sendMessageHandler struct {
+	userChatLogic         chat.ChatLogic
+	networkMessageStorage store.NetworkMessageStoragePort
 }
 
-func (s *SendMessageHandler) HandleMessage(message network.Message) error {
+func NewSendMessageHandler(userChatLogic chat.ChatLogic, networkMessageStorage store.NetworkMessageStoragePort) *sendMessageHandler {
+	return &sendMessageHandler{
+		userChatLogic:         userChatLogic,
+		networkMessageStorage: networkMessageStorage,
+	}
+}
+
+func (s *sendMessageHandler) HandleMessage(message network.Message) error {
 
 	// Structure of the message:
 	/*
@@ -1918,7 +2183,15 @@ func (s *SendMessageHandler) HandleMessage(message network.Message) error {
 		return err
 	}
 
-	s.userChatLogic.RecieveMessage(message.SenderID, message.ChatID, content.Message)
+	// Store the message
+	err = s.networkMessageStorage.StoreMessage(message)
+	if err != nil {
+		fmt.Println("Error storing message")
+		return err
+	}
+
+	// Handle the received message
+	s.userChatLogic.ReceiveMessage(message.SenderID, message.ChatID, content.Message)
 
 	return nil
 }
@@ -1933,18 +2206,27 @@ import (
 	"fmt"
 	"github.com/scherzma/Skunk/cmd/skunk/application/domain/chat"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/store"
 )
 
-type SetUsernameHandler struct {
-	userChatLogic chat.ChatLogic
+type setUsernameHandler struct {
+	userChatLogic      chat.ChatLogic
+	userMessageStorage store.UserMessageStoragePort
 }
 
-func (s *SetUsernameHandler) HandleMessage(message network.Message) error {
+func NewSetUsernameHandler(userChatLogic chat.ChatLogic, userMessageStorage store.UserMessageStoragePort) *setUsernameHandler {
+	return &setUsernameHandler{
+		userChatLogic:      userChatLogic,
+		userMessageStorage: userMessageStorage,
+	}
+}
+
+func (s *setUsernameHandler) HandleMessage(message network.Message) error {
 
 	// Structure of the message:
 	/*
 		{
-			"message": "asdfasdfasdf",
+			"username": "asdfasdfasdf",
 		}
 	*/
 
@@ -1958,6 +2240,14 @@ func (s *SetUsernameHandler) HandleMessage(message network.Message) error {
 		return err
 	}
 
+	// Store the username
+	err = s.userMessageStorage.PeerSetUsername(message.SenderID, message.ChatID, content.Username)
+	if err != nil {
+		fmt.Println("Error storing username")
+		return err
+	}
+
+	// Handle the username change
 	s.userChatLogic.PeerSetsUsername(message.SenderID, message.ChatID, content.Username)
 
 	return nil
@@ -1974,16 +2264,27 @@ import (
 	"github.com/google/uuid"
 	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_model"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/store"
 	"time"
 )
 
-type SyncRequestHandler struct {
+type syncRequestHandler struct {
+	syncStorage           store.SyncStoragePort
+	networkMessageStorage store.NetworkMessageStoragePort
+	messageSender         MessageSender
 }
 
-func (s *SyncRequestHandler) HandleMessage(message network.Message) error {
+func NewSyncRequestHandler(syncStorage store.SyncStoragePort, networkMessageStorage store.NetworkMessageStoragePort) *syncRequestHandler {
+	return &syncRequestHandler{
+		syncStorage:           syncStorage,
+		networkMessageStorage: networkMessageStorage,
+	}
+}
 
-	chatRepo := p_model.GetNetworkChatsInstance()
-	chatMessageRepo := chatRepo.GetChat(message.ChatID)
+func (s *syncRequestHandler) HandleMessage(message network.Message) error {
+
+	chatRepo := p_model.GetNetworkChatsInstance()       // TODO: change
+	chatMessageRepo := chatRepo.GetChat(message.ChatID) // TODO: change
 
 	// Parse the content of the message
 	/*
@@ -2006,8 +2307,8 @@ func (s *SyncRequestHandler) HandleMessage(message network.Message) error {
 	}
 
 	// Find difference between "message" already known messages and own messages that the other peer does not know
-	missingExternalMessages := chatMessageRepo.GetMissingExternalMessages(content.ExistingMessageIDs)
-	missingInternalMessages := chatMessageRepo.GetMissingInternalMessageIDs(content.ExistingMessageIDs)
+	missingExternalMessages := chatMessageRepo.GetMissingExternalMessages(content.ExistingMessageIDs)   // TODO: change
+	missingInternalMessages := chatMessageRepo.GetMissingInternalMessageIDs(content.ExistingMessageIDs) // TODO: change
 
 	// Convert missingExternalMessages to a JSON string
 	externalMessagesBytes, err := json.Marshal(missingExternalMessages)
@@ -2049,9 +2350,8 @@ func (s *SyncRequestHandler) HandleMessage(message network.Message) error {
 		Operation:       network.SYNC_REQUEST,
 	}
 
-	peer := GetPeerInstance()
-	peer.SendMessageToNetworkPeer("addressResponse", syncResponse)
-	peer.SendMessageToNetworkPeer("addressRequest", syncRequest)
+	s.messageSender.SendMessage("addressResponse", syncResponse)
+	s.messageSender.SendMessage("addressRequest", syncRequest)
 
 	return nil
 }
@@ -2064,17 +2364,23 @@ package messageHandlers
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_model"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/store"
 )
 
-type SyncResponseHandler struct {
+type syncResponseHandler struct {
+	networkMessageStorage store.NetworkMessageStoragePort
 }
 
-func (s *SyncResponseHandler) HandleMessage(message network.Message) error {
+func NewSyncResponseHandler(networkMessageStorage store.NetworkMessageStoragePort) *syncResponseHandler {
+	return &syncResponseHandler{
+		networkMessageStorage: networkMessageStorage,
+	}
+}
 
-	chatRepo := p_model.GetNetworkChatsInstance()
-	chatMessageRepo := chatRepo.GetChat(message.ChatID)
+func (s *syncResponseHandler) HandleMessage(message network.Message) error {
+	//chatRepo := p_model.GetNetworkChatsInstance() TODO: change
+	//chatMessageRepo := chatRepo.GetChat(message.ChatID) TODO: change
 
 	var receivedMessages []network.Message
 	err := json.Unmarshal([]byte(message.Content), &receivedMessages)
@@ -2083,8 +2389,15 @@ func (s *SyncResponseHandler) HandleMessage(message network.Message) error {
 		return err
 	}
 
-	for _, message := range receivedMessages {
-		chatMessageRepo.AddMessage(message)
+	for _, msg := range receivedMessages {
+		// Store the message
+		err = s.networkMessageStorage.StoreMessage(msg)
+		if err != nil {
+			fmt.Println("Error storing message:", err)
+			return err
+		}
+		// Add the message to the chat repository
+		//chatMessageRepo.AddMessage(msg) TODO: change
 	}
 
 	return nil
@@ -2125,6 +2438,57 @@ func (t *TestMessageHandler) HandleMessage(message network.Message) error {
 
 	fmt.Println("TestMessageHandler: ", message.Content)
 	return nil
+}
+
+
+__________ ./skunk/application/domain/p2p_network/p_service/messageHandlers/messageSender.go:
+
+package messageHandlers
+
+import (
+	"errors"
+	"fmt"
+	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_service"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+)
+
+// This has many problems right now.
+// For example is it only able to handle on connection. That means, while the peer is able to handle more, this is a bottleneck.
+// One could create multiple MessageSenders, but this is probably a bad idea.
+// Because, if done so, everything would need multiple messageSenders, or swap them for possibly ever message.
+// Still, being able to handle multiple networkConnections is not a requirement for the first release, and while many parts of the architecture support it, this will suffice.
+
+type MessageSender struct {
+	networkConnection network.NetworkConnection
+	securityContext   p_service.SecurityValidater
+}
+
+func NewMessageSender(securityContext p_service.SecurityValidater) *MessageSender {
+	return &MessageSender{
+		securityContext:   securityContext,
+		networkConnection: nil,
+	}
+}
+
+func (m *MessageSender) SendMessage(address string, message network.Message) error {
+	if m.networkConnection == nil {
+		return fmt.Errorf("no network connection is set")
+	}
+
+	if !m.securityContext.ValidateOutgoingMessage(message) {
+		return errors.New("invalid message")
+	}
+
+	err := m.networkConnection.SendMessageToNetworkPeer(address, message)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (m *MessageSender) SetNetworkConnection(networkConnection network.NetworkConnection) {
+	m.networkConnection = networkConnection
 }
 
 
@@ -2218,14 +2582,19 @@ type UserMessageStoragePort interface {
 
 type ChatActionStoragePort interface {
 	PeerJoinedChat(peerId string, chatId string) error
-	PeerLeftChat(peerId string, chatId string, senderId string, date int64) error
+	PeerLeftChat(peerId string, chatId string) error
 	ChatCreated(chatName string, chatId string) error
 }
 
+type PublicKeyAddress struct {
+	Address   string
+	PublicKey string
+}
+
 type ChatInvitationStoragePort interface {
-	InvitatedToChat(chatId string, chatName string, peers []string) error
+	InvitedToChat(messageID string, peers []PublicKeyAddress) error
 	PeerGotInvitedToChat(peerId string, chatId string) error
-	GetInvitations(peerId string) []string
+	GetInvitations(peerId string) ([]string, error)
 }
 
 type SyncStoragePort interface {
@@ -2256,11 +2625,11 @@ type User struct {
 }
 
 type DisplayStoragePort interface {
-	GetChats() []Chat
-	GetUsername(peerId string, chatId string) string
-	GetUsersInChat(chatId string) []User
-	GetPeers() []string
-	GetChatMessages(chatId string) []ChatMessage
+	GetChats() ([]Chat, error)
+	GetUsername(peerID, chatID string) (string, error)
+	GetUsersInChat(chatID string) ([]User, error)
+	GetPeers() ([]string, error)
+	GetChatMessages(chatID string) ([]network.Message, error)
 }
 
 

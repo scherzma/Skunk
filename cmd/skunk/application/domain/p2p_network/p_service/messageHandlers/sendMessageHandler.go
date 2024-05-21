@@ -5,13 +5,22 @@ import (
 	"fmt"
 	"github.com/scherzma/Skunk/cmd/skunk/application/domain/chat"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/store"
 )
 
-type SendMessageHandler struct {
-	userChatLogic chat.ChatLogic
+type sendMessageHandler struct {
+	userChatLogic         chat.ChatLogic
+	networkMessageStorage store.NetworkMessageStoragePort
 }
 
-func (s *SendMessageHandler) HandleMessage(message network.Message) error {
+func NewSendMessageHandler(userChatLogic chat.ChatLogic, networkMessageStorage store.NetworkMessageStoragePort) *sendMessageHandler {
+	return &sendMessageHandler{
+		userChatLogic:         userChatLogic,
+		networkMessageStorage: networkMessageStorage,
+	}
+}
+
+func (s *sendMessageHandler) HandleMessage(message network.Message) error {
 
 	// Structure of the message:
 	/*
@@ -30,7 +39,15 @@ func (s *SendMessageHandler) HandleMessage(message network.Message) error {
 		return err
 	}
 
-	s.userChatLogic.RecieveMessage(message.SenderID, message.ChatID, content.Message)
+	// Store the message
+	err = s.networkMessageStorage.StoreMessage(message)
+	if err != nil {
+		fmt.Println("Error storing message")
+		return err
+	}
+
+	// Handle the received message
+	s.userChatLogic.ReceiveMessage(message.SenderID, message.ChatID, content.Message)
 
 	return nil
 }

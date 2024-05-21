@@ -2,15 +2,15 @@ package test
 
 import (
 	"github.com/scherzma/Skunk/cmd/skunk/adapter/in/networkMockAdapter"
-	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_service/messageHandlers"
+	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_service"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
 	"github.com/stretchr/testify/assert"
 	"testing"
 )
 
 func TestGetPeerInstance(t *testing.T) {
-	peer1 := messageHandlers.GetPeerInstance()
-	peer2 := messageHandlers.GetPeerInstance()
+	peer1 := p_service.GetPeerInstance()
+	peer2 := p_service.GetPeerInstance()
 
 	if peer1 != peer2 {
 		t.Errorf("GetPeerInstance() failed, expected same instance, got different instances")
@@ -18,7 +18,7 @@ func TestGetPeerInstance(t *testing.T) {
 }
 
 func TestNotify(t *testing.T) {
-	peer := messageHandlers.GetPeerInstance()
+	peer := p_service.GetPeerInstance()
 
 	testMessage := network.Message{
 		Id:              "8888",
@@ -40,7 +40,7 @@ func TestNotify(t *testing.T) {
 
 func TestSubscribeAndUnsubscribeToNetwork(t *testing.T) {
 	mockConnection := networkMockAdapter.GetMockConnection()
-	peer := messageHandlers.GetPeerInstance()
+	peer := p_service.GetPeerInstance()
 
 	err := mockConnection.SubscribeToNetwork(peer)
 	assert.NoError(t, err, "SubscribeToNetwork() failed, expected nil, got error")

@@ -8,37 +8,42 @@ import (
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/store"
 )
 
-// This Peer gets invited to a chat
-type inviteToChatHandler struct {
+// InviteToChatHandler handles invitations for a peer to join a chat
+type InviteToChatHandler struct {
 	userChatLogic         chat.ChatLogic
 	chatInvitationStorage store.ChatInvitationStoragePort
 }
 
-func NewInviteToChatHandler(userChatLogic chat.ChatLogic, chatInvitationStorage store.ChatInvitationStoragePort) *inviteToChatHandler {
-	return &inviteToChatHandler{
+// NewInviteToChatHandler creates a new InviteToChatHandler
+func NewInviteToChatHandler(userChatLogic chat.ChatLogic, chatInvitationStorage store.ChatInvitationStoragePort) *InviteToChatHandler {
+	return &InviteToChatHandler{
 		userChatLogic:         userChatLogic,
 		chatInvitationStorage: chatInvitationStorage,
 	}
 }
 
-func (i *inviteToChatHandler) HandleMessage(message network.Message) error {
+// HandleMessage processes the chat invitation message
+func (i *InviteToChatHandler) HandleMessage(message network.Message) error {
 
-	// Structure of the message:
+	// Message structure:
 	/*
 		{
-			"chatId": "asdf",
-			"chatName": "asdf",
+			"chatId": "chat_id",
+			"chatName": "chat_name",
 			"peers": [
-				"asdf",
-				"asdf"
+				{
+					"address": "peer_address",
+					"publicKey": "peer_public_key"
+				},
+				...
 			]
 		}
 	*/
 
 	var content struct {
-		ChatID   string `json:"chatId"`
-		ChatName string `json:"chatName"`
-		Peers    []string
+		ChatID   string                   `json:"chatId"`
+		ChatName string                   `json:"chatName"`
+		Peers    []store.PublicKeyAddress `json:"peers"`
 	}
 
 	err := json.Unmarshal([]byte(message.Content), &content)
@@ -47,12 +52,20 @@ func (i *inviteToChatHandler) HandleMessage(message network.Message) error {
 		return err
 	}
 
-	err = i.chatInvitationStorage.InvitedToChat(message.Id, []store.PublicKeyAddress{{Address: content.ChatName}})
+	// Store the chat invitation details
+	err = i.chatInvitationStorage.InvitedToChat(message.Id, content.Peers)
 	if err != nil {
 		return err
 	}
 
-	i.userChatLogic.ReceiveChatInvitation(message.SenderID, content.ChatID, content.ChatName, content.Peers)
+	// Extract addresses from peers
+	peerAddresses := make([]string, len(content.Peers))
+	for idx, peer := range content.Peers {
+		peerAddresses[idx] = peer.Address
+	}
+
+	// Notify the chat logic of the received invitation
+	i.userChatLogic.ReceiveChatInvitation(message.SenderID, content.ChatID, content.ChatName, peerAddresses)
 
 	return nil
 }

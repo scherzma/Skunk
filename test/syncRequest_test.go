@@ -3,7 +3,7 @@ package test
 import (
 	"github.com/scherzma/Skunk/cmd/skunk/adapter/in/networkMockAdapter"
 	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_model"
-	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_service/messageHandlers"
+	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_service"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
 	"testing"
 )
@@ -22,7 +22,7 @@ func TestSyncRequestHandler(t *testing.T) {
 		Operation:       network.TEST_MESSAGE,
 	}
 
-	peer := messageHandlers.GetPeerInstance()
+	peer := p_service.GetPeerInstance()
 
 	mockNetworkConnection := networkMockAdapter.GetMockConnection()
 	peer.AddNetworkConnection(mockNetworkConnection)

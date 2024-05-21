@@ -1,7 +1,7 @@
 package chat
 
 type ChatLogic interface {
-	RecieveMessage(senderId string, chatId string, message string) error
+	ReceiveMessage(senderId string, chatId string, message string) error
 	ReceiveChatInvitation(senderId string, chatId string, chatName string, chatMembers []string) error
 	PeerLeavesChat(senderId string, chatId string) error
 	PeerJoinsChat(senderId string, chatId string) error
