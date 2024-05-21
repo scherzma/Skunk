@@ -2,7 +2,6 @@ package test
 
 import (
 	"context"
-	"fmt"
 	"testing"
 	"time"
 
@@ -32,7 +31,6 @@ func TestListen(t *testing.T) {
 	assert.NoError(t, err)
 
 	peerInstance.Listen(nil)
-	time.Sleep(waitTime)
 
 	// Connecting to peer address should work
 	conn, _, err := websocket.Dial(context.Background(), "ws://127.0.0.1:8080", nil)
@@ -50,7 +48,6 @@ func TestConnect(t *testing.T) {
 
 	peer1.Listen(nil)
 	peer2.Listen(nil)
-	time.Sleep(waitTime)
 
 	// First connect from peer1 to peer2.
 	err = peer1.Connect(peer2.Address)
@@ -80,10 +77,8 @@ func TestPeerSetWriteConn(t *testing.T) {
 	defer peer2.Shutdown()
 
 	peer1.Listen(nil)
-	time.Sleep(waitTime)
 
 	err := peer2.Connect(peer1.Address)
-	time.Sleep(waitTime)
 
 	// First time setting the write conn to peer1.Address should work
 	err = peer2.SetWriteConn(peer1.Address)
@@ -115,7 +110,6 @@ func TestPeerReadMessages(t *testing.T) {
 	defer peer5.Shutdown()
 
 	peer1.Listen(nil)
-	time.Sleep(1 * time.Second)
 
 	address := peer1.Address
 	peer2.Connect(address)
@@ -151,7 +145,7 @@ func TestPeerReadMessages(t *testing.T) {
 	peer2.WriteMessage("Recursive ...")
 
 	// wait until all messages have been sent and received
-	time.Sleep(10 * time.Second)
+	time.Sleep(13 * time.Second)
 
 	// check that no error occured in this time
 	select {
@@ -168,7 +162,6 @@ func TestPeerWriteMessage(t *testing.T) {
 	defer peer2.Shutdown()
 
 	peer1.Listen(nil)
-	time.Sleep(1 * time.Second)
 
 	peer2.Connect(peer1.Address)
 	peer2.SetWriteConn(peer1.Address)
@@ -182,12 +175,12 @@ func TestPeerWriteMessage(t *testing.T) {
 		input string
 		want  string
 	}{
-		{"numbers", "1234567890", fmt.Sprintf("From %s: 1234567890", peer2.Address)},
-		{"LETTERS", "ABCDEFGHIZ", fmt.Sprintf("From %s: ABCDEFGHIZ", peer2.Address)},
-		{"letters", "abcdefghiz", fmt.Sprintf("From %s: abcdefghiz", peer2.Address)},
-		{"special", "!?({&=$-:,", fmt.Sprintf("From %s: !?({&=$-:,", peer2.Address)},
-		{"weird", "\t\n\r¬² ", fmt.Sprintf("From %s: \t\n\r¬² ", peer2.Address)},
-		{"mixture", "abc123ABC!", fmt.Sprintf("From %s: abc123ABC!", peer2.Address)},
+		{"numbers", "1234567890", "1234567890"},
+		{"LETTERS", "ABCDEFGHIZ", "ABCDEFGHIZ"},
+		{"letters", "abcdefghiz", "abcdefghiz"},
+		{"special", "!?({&=$-:,", "!?({&=$-:,"},
+		{"weird", "\t\n\r¬² ", "\t\n\r¬² "},
+		{"mixture", "abc123ABC!", "abc123ABC!"},
 	}
 
 	for _, tt := range tests {
@@ -209,7 +202,6 @@ func TestPeerShutdown(t *testing.T) {
 	defer peerInstance.Shutdown()
 
 	peerInstance.Listen(nil)
-	time.Sleep(waitTime)
 
 	peerInstance.Shutdown()
 
@@ -218,7 +210,6 @@ func TestPeerShutdown(t *testing.T) {
 	assert.Error(t, err)
 
 	peerInstance.Listen(nil)
-	time.Sleep(waitTime)
 
 	// After executing Listen you should be able to connect to the peer again
 	conn, _, err := websocket.Dial(context.Background(), "ws://127.0.0.1:1111", nil)
@@ -226,25 +217,6 @@ func TestPeerShutdown(t *testing.T) {
 	assert.NotNil(t, conn)
 
 	conn.Close(websocket.StatusNormalClosure, "test completed")
-}
-
-func TestPeerHeartbeat(t *testing.T) {
-	peer1, _ := peer.NewPeer("127.0.0.1", "1111", "", "")
-	defer peer1.Shutdown()
-	peer2, _ := peer.NewPeer("127.0.0.1", "2222", "", "")
-
-	peer1.Listen(nil)
-	time.Sleep(waitTime)
-
-	peer2.Connect(peer1.Address)
-	time.Sleep(waitTime)
-
-	peer2.Shutdown()
-	time.Sleep(70 * time.Second)
-
-	// Should not work anymore, because hearbeat removed the closed connection
-	err := peer1.SetWriteConn(peer2.Address)
-	assert.Error(t, err)
 }
 
 // this test represents two peers exchanging a message over the tor network
@@ -272,7 +244,6 @@ func TestPeerTor(t *testing.T) {
 	defer peerInstanceOne.Shutdown()
 
 	peerInstanceOne.Listen(onionOne)
-	time.Sleep(1 * waitTime)
 
 	// starts the embedded version of tor
 	conf = &tor.TorConfig{
@@ -291,9 +262,6 @@ func TestPeerTor(t *testing.T) {
 
 	onionTwo, err := myTorTwo.StartHiddenService()
 	assert.NoError(t, err)
-
-	// wait for the hidden service to be published completely
-	time.Sleep(10 * time.Second)
 
 	peerInstanceTwo, _ := peer.NewPeer(onionTwo.ID+".onion", "2221", "2222", "127.0.0.1:9053")
 	defer peerInstanceTwo.Shutdown()

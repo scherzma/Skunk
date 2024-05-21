@@ -3,10 +3,12 @@ package messageHandlers
 
 import (
 	"errors"
+	"fmt"
+	"sync"
+
 	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_model"
 	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_service"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
-	"sync"
 )
 
 var (
@@ -19,6 +21,7 @@ var (
 // that is lazily initialized using the sync.Once mechanism.
 type Peer struct {
 	Chats           p_model.NetworkChats
+	Address         string
 	handlers        map[network.OperationType]MessageHandler
 	connections     []network.NetworkConnection
 	securityContext p_service.SecurityContext
@@ -27,14 +30,17 @@ type Peer struct {
 func GetPeerInstance() *Peer {
 	once.Do(func() {
 		handlers := map[network.OperationType]MessageHandler{
+			network.SEND_MESSAGE:  &SendMessageHandler{},
+			network.SYNC_REQUEST:  &SyncRequestHandler{},
+			network.SYNC_RESPONSE: &SyncResponseHandler{},
+			// CREATE_CHAT missing
 			network.JOIN_CHAT:      &JoinChatHandler{},
-			network.SEND_FILE:      &SendFileHandler{},
-			network.SYNC_REQUEST:   &SyncRequestHandler{},
-			network.SYNC_RESPONSE:  &SyncResponseHandler{},
-			network.SET_USERNAME:   &SetUsernameHandler{},
-			network.SEND_MESSAGE:   &SendMessageHandler{},
-			network.INVITE_TO_CHAT: &InviteToChatHandler{},
 			network.LEAVE_CHAT:     &LeaveChatHandler{},
+			network.INVITE_TO_CHAT: &InviteToChatHandler{},
+			network.SEND_FILE:      &SendFileHandler{},
+			network.SET_USERNAME:   &SetUsernameHandler{},
+			// USER_OFFLINE missing
+			network.NETWORK_ONLINE: &NetworkOnlineHandler{},
 			network.TEST_MESSAGE:   &TestMessageHandler{},
 			network.TEST_MESSAGE_2: &TestMessageHandler2{},
 		}
@@ -61,6 +67,10 @@ func (p *Peer) AddNetworkConnection(connection network.NetworkConnection) {
 func (p *Peer) RemoveNetworkConnection(connection network.NetworkConnection) {
 	for i, c := range p.connections {
 		if c == connection {
+			err := c.UnsubscribeFromNetwork()
+			if err != nil {
+				fmt.Println(err)
+			}
 			p.connections = append(p.connections[:i], p.connections[i+1:]...)
 			break
 		}
@@ -76,7 +86,6 @@ func (p *Peer) Notify(message network.Message) error {
 		if !p.securityContext.ValidateIncomingMessage(message) {
 			return errors.New("invalid message")
 		}
-
 		return handler.HandleMessage(message)
 	}
 	return errors.New("invalid message operation")
@@ -84,7 +93,6 @@ func (p *Peer) Notify(message network.Message) error {
 
 // SendMessageToNetworkPeer sends a message to a network peer.
 func (p *Peer) SendMessageToNetworkPeer(address string, message network.Message) error {
-
 	if !p.securityContext.ValidateOutgoingMessage(message) {
 		return errors.New("invalid message")
 	}

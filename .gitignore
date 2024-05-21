@@ -24,3 +24,8 @@ go.work
 .DS_Store
 
 .idea
+
+# Ignore all subdirectories in the testfolder
+test/*
+!test/*
+test/*/**
