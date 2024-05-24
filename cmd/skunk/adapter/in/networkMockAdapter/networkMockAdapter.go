@@ -2,8 +2,9 @@ package networkMockAdapter
 
 import (
 	"fmt"
-	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
 	"sync"
+
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
 )
 
 // NetworkMockAdapter is a mock adapter for the network
