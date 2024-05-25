@@ -41,20 +41,26 @@ const (
 	screenChats
 	screenHelp
 	screenUsername
+	screenTestUser
+	screenCreateChat
 )
 
 type model struct {
-	currentScreen screen                       // Current screen
-	chats         map[string][]FrontendMessage // Map from ChatID to messages
-	chatNames     map[string]string            // Map from ChatID to chat names
-	invites       []string                     // List of invites
-	cursor        int                          // Cursor for selecting chats or invites
-	focus         string                       // Can be 'chats' or 'invites'
-	currentChat   string                       // Currently selected chat
-	inChatDetail  bool                         // Whether we are in chat details
-	input         textinput.Model              // User input for messages
-	usernameInput textinput.Model              // User input for setting the username
-	usernames     map[string]string            // Map from ChatID to username
+	currentScreen   screen                       // Current screen
+	chats           map[string][]FrontendMessage // Map from ChatID to messages
+	chatNames       map[string]string            // Map from ChatID to chat names
+	invites         []string                     // List of invites
+	cursor          int                          // Cursor for selecting chats or invites
+	focus           string                       // Can be 'chats' or 'invites'
+	currentChat     string                       // Currently selected chat
+	inChatDetail    bool                         // Whether we are in chat details
+	input           textinput.Model              // User input for messages
+	usernameInput   textinput.Model              // User input for setting the username
+	usernames       map[string]string            // Map from ChatID to username
+	testUserInput   textinput.Model              // User input for testing connection
+	createChatInput textinput.Model              // User input for creating chat (invitees)
+	chatNameInput   textinput.Model              // User input for creating chat (chat name)
+	chatInvitees    []string                     // List of invitees for the new chat
 }
 
 func initialModel() model {
@@ -69,23 +75,42 @@ func initialModel() model {
 	ui.CharLimit = 20
 	ui.Width = 20
 
+	tu := textinput.New()
+	tu.Placeholder = "Enter OnionID to test connection..."
+	tu.CharLimit = 56
+	tu.Width = 20
+
+	ci := textinput.New()
+	ci.Placeholder = "Enter OnionID to invite..."
+	ci.CharLimit = 56
+	ci.Width = 20
+
+	cn := textinput.New()
+	cn.Placeholder = "Enter chat name..."
+	cn.CharLimit = 30
+	cn.Width = 20
+
 	return model{
 		currentScreen: screenIntro,
 		chats: map[string][]FrontendMessage{
 			"1": {
-				{Timestamp: time.Now().Unix(), Content: "Hello, this is chat 1!", FromUser: "Alice", ChatID: "1"},
-				{Timestamp: time.Now().Unix(), Content: "Hi Alice!", FromUser: "Bob", ChatID: "1"},
+				{Timestamp: time.Now().Unix(), Content: "Hello, this is chat 1!", FromUser: "Alice", ChatID: "1", Operation: SEND_MESSAGE},
+				{Timestamp: time.Now().Unix(), Content: "Hi Alice!", FromUser: "Bob", ChatID: "1", Operation: SEND_MESSAGE},
 			},
 			"2": {
-				{Timestamp: time.Now().Unix(), Content: "Welcome to chat 2", FromUser: "Charlie", ChatID: "2"},
+				{Timestamp: time.Now().Unix(), Content: "Welcome to chat 2", FromUser: "Charlie", ChatID: "2", Operation: SEND_MESSAGE},
 			},
 		},
-		chatNames:     map[string]string{"1": "Chat 1", "2": "Chat 2"},
-		invites:       []string{"Invitation from Alice to Chat 3", "Invitation from Bob to Chat 4"},
-		focus:         "chats",
-		input:         ti,
-		usernameInput: ui,
-		usernames:     make(map[string]string),
+		chatNames:       map[string]string{"1": "Chat 1", "2": "Chat 2"},
+		invites:         []string{"Invitation from Alice to Chat 3", "Invitation from Bob to Chat 4"},
+		focus:           "chats",
+		input:           ti,
+		usernameInput:   ui,
+		usernames:       make(map[string]string),
+		testUserInput:   tu,
+		createChatInput: ci,
+		chatNameInput:   cn,
+		chatInvitees:    []string{},
 	}
 }
 
@@ -119,8 +144,6 @@ func (m *model) handleCommand(command, argument string) (tea.Model, tea.Cmd) {
 	var msg FrontendMessage
 
 	switch command {
-	case "/test":
-		msg = createMessage(m.usernames[m.currentChat], m.currentChat, argument, TEST_MESSAGE)
 	case "/leave":
 		msg = createMessage(m.usernames[m.currentChat], m.currentChat, "", LEAVE_CHAT)
 		m.chats[m.currentChat] = append(m.chats[m.currentChat], msg)
@@ -176,7 +199,7 @@ func (m *model) handleInviteAccept() (tea.Model, tea.Cmd) {
 	invitation := m.invites[m.cursor] // Save the current invitation
 	parts := strings.Split(invitation, " to ")
 	chatID := parts[len(parts)-1]
-	chatName := "Chat " + chatID
+	chatName := chatID
 
 	// Add the chat if it doesn't exist
 	if _, exists := m.chatNames[chatID]; !exists {
@@ -248,6 +271,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if msg.String() == "h" && !m.inChatDetail {
 					m.currentScreen = screenHelp
 				}
+				if msg.String() == "c" && !m.inChatDetail {
+					m.currentScreen = screenCreateChat
+					m.createChatInput.Focus()
+				}
+				if msg.String() == "t" && !m.inChatDetail {
+					m.currentScreen = screenTestUser
+					m.testUserInput.Focus()
+				}
 			case tea.KeyUp:
 				if !m.inChatDetail && m.cursor > 0 {
 					m.cursor--
@@ -311,6 +342,75 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var cmd tea.Cmd
 			m.usernameInput, cmd = m.usernameInput.Update(msg)
 			cmds = append(cmds, cmd)
+		case screenTestUser:
+			switch msg.Type {
+			case tea.KeyEnter:
+				onionID := strings.TrimSpace(m.testUserInput.Value())
+				m.testUserInput.SetValue("")
+				if testConnection(onionID) {
+					return m, tea.Printf("Connection to %s successful!", onionID)
+				} else {
+					return m, tea.Printf("Failed to connect to %s.", onionID)
+				}
+			case tea.KeyEsc:
+				m.testUserInput.Blur()
+				m.currentScreen = screenChats
+			}
+
+			var cmd tea.Cmd
+			m.testUserInput, cmd = m.testUserInput.Update(msg)
+			cmds = append(cmds, cmd)
+		case screenCreateChat:
+			switch msg.Type {
+			case tea.KeyCtrlC:
+				chatName := strings.TrimSpace(m.chatNameInput.Value())
+				if chatName == "" {
+					return m, tea.Printf("Chat name cannot be empty.")
+				}
+				chatID := fmt.Sprintf("%d", time.Now().UnixNano()) // Generate a unique chat ID
+				m.chatNames[chatID] = chatName
+				m.chats[chatID] = []FrontendMessage{}
+				for _, invitee := range m.chatInvitees {
+					msg := createMessage(m.usernames[m.currentChat], chatID, invitee, INVITE_TO_CHAT)
+					m.chats[chatID] = append(m.chats[chatID], msg)
+				}
+				m.createChatInput.SetValue("")
+				m.chatNameInput.SetValue("")
+				m.chatInvitees = []string{}
+				m.currentScreen = screenChats
+				m.focus = "chats"
+				return m, tea.Printf("Chat %s created!", chatName)
+			case tea.KeyCtrlI:
+				if m.createChatInput.Focused() {
+					m.createChatInput.Blur()
+					m.chatNameInput.Focus()
+				} else {
+					m.chatNameInput.Blur()
+					m.createChatInput.Focus()
+				}
+			case tea.KeyEnter:
+				if m.createChatInput.Focused() {
+					invitee := strings.TrimSpace(m.createChatInput.Value())
+					if invitee != "" {
+						m.chatInvitees = append(m.chatInvitees, invitee)
+						m.createChatInput.SetValue("")
+					}
+				} else if m.chatNameInput.Focused() {
+					m.chatNameInput.Blur()
+					m.createChatInput.Focus()
+				}
+			case tea.KeyEsc:
+				m.createChatInput.SetValue("")
+				m.chatNameInput.SetValue("")
+				m.chatInvitees = []string{}
+				m.currentScreen = screenChats
+			}
+
+			var cmd tea.Cmd
+			m.createChatInput, cmd = m.createChatInput.Update(msg)
+			cmds = append(cmds, cmd)
+			m.chatNameInput, cmd = m.chatNameInput.Update(msg)
+			cmds = append(cmds, cmd)
 		}
 	}
 
@@ -343,6 +443,10 @@ func (m model) View() string {
 		return m.helpView()
 	case screenUsername:
 		return m.usernameView()
+	case screenTestUser:
+		return m.testUserView()
+	case screenCreateChat:
+		return m.createChatView()
 	}
 	return ""
 }
@@ -404,7 +508,7 @@ func (m model) chatsView() string {
 	}
 
 	s += "╚════════════════════════════════════════════════════════════╝\n"
-	s += "\nPress Enter to open the chat, Tab to switch between chats and invites, Backspace to decline an invite, h for help, and q to quit."
+	s += "\nPress Enter to open the chat, Tab to switch between chats and invites, Backspace to decline an invite, h for help, t to test connection, c to create a chat, and q to quit."
 
 	return s
 }
@@ -429,8 +533,6 @@ func (m model) chatDetailView() string {
 			s += fmt.Sprintf("[%s] User %s has sent a file in chat %s\n", timeString, msg.FromUser, msg.ChatID)
 		case SET_USERNAME:
 			s += fmt.Sprintf("[%s] %s\n", timeString, msg.Content)
-		case TEST_MESSAGE:
-			s += fmt.Sprintf("[%s] Test message from %s: %s\n", timeString, msg.FromUser, msg.Content)
 		case LOAD_MESSAGES:
 			s += fmt.Sprintf("[%s] %s: %s\n", timeString, msg.FromUser, msg.Content)
 		default:
@@ -448,7 +550,6 @@ func (m model) helpView() string {
 	return `
 Available commands in the chat:
 
-  /test <OnionID> - Send a test message to verify connectivity
   /leave - Leave a chat
   /invite <OnionID> - Invite a user to a chat
   /sendfile <FilePath> - Send a file in a chat
@@ -463,6 +564,23 @@ func (m model) usernameView() string {
 	return fmt.Sprintf("Please set your username for %s:\n\n%s\n\nPress Enter to confirm.", m.chatNames[m.currentChat], m.usernameInput.View())
 }
 
+func (m model) testUserView() string {
+	return fmt.Sprintf("Test connection to OnionID:\n\n%s\n\nPress Enter to test, ESC to return.", m.testUserInput.View())
+}
+
+func (m model) createChatView() string {
+	s := "Create a new chat:\n\n"
+	s += fmt.Sprintf("\nInvitee: %s\n", m.createChatInput.View())
+	s += fmt.Sprintf("Chat Name: %s\n", m.chatNameInput.View())
+	s += "Invitees:\n"
+	for _, invitee := range m.chatInvitees {
+		s += fmt.Sprintf("- %s\n", invitee)
+	}
+	s += "\nPress Enter to add invitee, Ctrl+I to switch input, Ctrl+C to create chat, ESC to return."
+
+	return s
+}
+
 func getSortedChatIDs(chatNames map[string]string) []string {
 	chatIDs := make([]string, 0, len(chatNames))
 	for chatID := range chatNames {
@@ -470,6 +588,12 @@ func getSortedChatIDs(chatNames map[string]string) []string {
 	}
 	sort.Strings(chatIDs) // Sort chat IDs to ensure a stable order
 	return chatIDs
+}
+
+func testConnection(onionID string) bool {
+	// Simulate a connection test to the OnionID
+	// Replace with actual connection logic as needed
+	return onionID == "validOnionID"
 }
 
 func main() {
