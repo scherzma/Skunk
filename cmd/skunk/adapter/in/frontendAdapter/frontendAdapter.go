@@ -9,15 +9,13 @@ import (
 
 // FrontendAdapter implements the frontend.Frontend interface
 type FrontendAdapter struct {
-	mu        sync.RWMutex
-	observers map[frontend.FrontendObserver]struct{}
+	mu       sync.RWMutex
+	observer frontend.FrontendObserver
 }
 
 // NewFrontendAdapter creates a new FrontendAdapter
 func NewFrontendAdapter() *FrontendAdapter {
-	return &FrontendAdapter{
-		observers: make(map[frontend.FrontendObserver]struct{}),
-	}
+	return &FrontendAdapter{}
 }
 
 // SubscribeToFrontend subscribes an observer to receive frontend messages
@@ -25,11 +23,11 @@ func (fa *FrontendAdapter) SubscribeToFrontend(observer frontend.FrontendObserve
 	fa.mu.Lock()
 	defer fa.mu.Unlock()
 
-	if _, exists := fa.observers[observer]; exists {
+	if fa.observer != nil {
 		return fmt.Errorf("observer already subscribed")
 	}
 
-	fa.observers[observer] = struct{}{}
+	fa.observer = observer
 	return nil
 }
 
@@ -38,24 +36,26 @@ func (fa *FrontendAdapter) UnsubscribeFromFrontend(observer frontend.FrontendObs
 	fa.mu.Lock()
 	defer fa.mu.Unlock()
 
-	if _, exists := fa.observers[observer]; !exists {
+	if fa.observer == nil {
+		return fmt.Errorf("no observer subscribed")
+	}
+
+	if fa.observer != observer {
 		return fmt.Errorf("observer not found")
 	}
 
-	delete(fa.observers, observer)
+	fa.observer = nil
 	return nil
 }
 
-// SendToFrontend sends a message to all subscribed observers
+// SendToFrontend sends a message to the subscribed observer
 func (fa *FrontendAdapter) SendToFrontend(message frontend.FrontendMessage) error {
 	fa.mu.RLock()
 	defer fa.mu.RUnlock()
 
-	var err error
-	for observer := range fa.observers {
-		if notifyErr := observer.Notify(message); notifyErr != nil {
-			err = notifyErr // capture the last error, but try to notify all observers
-		}
+	if fa.observer == nil {
+		return fmt.Errorf("no observer subscribed")
 	}
-	return err
+
+	return fa.observer.Notify(message)
 }
