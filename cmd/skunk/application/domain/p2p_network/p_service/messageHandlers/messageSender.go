@@ -12,7 +12,6 @@ import (
 // One could create multiple MessageSenders, but this is probably a bad idea.
 // Because, if done so, everything would need multiple messageSenders, or swap them for possibly ever message.
 // Still, being able to handle multiple networkConnections is not a requirement for the first release, and while many parts of the architecture support it, this will suffice.
-
 type MessageSender struct {
 	networkConnection network.NetworkConnection
 	securityContext   p_service.SecurityValidater

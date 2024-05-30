@@ -6,6 +6,7 @@ import (
 	"github.com/scherzma/Skunk/cmd/skunk/adapter/out/storage/storageSQLiteAdapter"
 	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_service/messageHandlers"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+	"github.com/stretchr/testify/assert"
 	"os"
 	"testing"
 )
@@ -74,7 +75,7 @@ func TestSyncRequestHandler(t *testing.T) {
 	testSyncMessage := network.Message{
 		Id:              "syncMsg2",
 		Timestamp:       1633029446,
-		Content:         "{\"existingMessageIds\": [\"msgMsg5\",\"msg2\"]}",
+		Content:         "{\"existingMessageIds\": [\"msgMsg9\",\"msg2\",\"msgMsg3\"]}",
 		SenderID:        "user1",
 		ReceiverID:      "user2",
 		SenderAddress:   "user1.onion",
@@ -89,5 +90,11 @@ func TestSyncRequestHandler(t *testing.T) {
 	mockNetworkConnection.SendMockNetworkMessageToSubscribers(testSyncMessage)
 
 	fmt.Println(mockNetworkConnection.LastSent)
+	assert.Equal(t, "user2", mockNetworkConnection.LastSent.SenderID)
+	assert.Equal(t, "chat1", mockNetworkConnection.LastSent.ChatID)
+	assert.Equal(t, "user1", mockNetworkConnection.LastSent.ReceiverID)
+	assert.Equal(t, "user1.onion", mockNetworkConnection.LastSent.ReceiverAddress)
+	assert.Equal(t, "user2.onion", mockNetworkConnection.LastSent.SenderAddress)
+	assert.Equal(t, network.SYNC_REQUEST, mockNetworkConnection.LastSent.Operation)
 
 }

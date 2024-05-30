@@ -14,11 +14,11 @@ import (
 type syncRequestHandler struct {
 	syncStorage           store.SyncStoragePort
 	networkMessageStorage store.NetworkMessageStoragePort
-	messageSender         MessageSender
+	messageSender         *MessageSender
 }
 
 // NewSyncRequestHandler creates a new instance of syncRequestHandler.
-func NewSyncRequestHandler(syncStorage store.SyncStoragePort, networkMessageStorage store.NetworkMessageStoragePort, messageSender MessageSender) *syncRequestHandler {
+func NewSyncRequestHandler(syncStorage store.SyncStoragePort, networkMessageStorage store.NetworkMessageStoragePort, messageSender *MessageSender) *syncRequestHandler {
 	return &syncRequestHandler{
 		syncStorage:           syncStorage,
 		networkMessageStorage: networkMessageStorage,
@@ -111,8 +111,14 @@ func (s *syncRequestHandler) HandleMessage(message network.Message) error {
 		Operation:       network.SYNC_REQUEST,
 	}
 
-	s.messageSender.SendMessage(syncResponse)
-	s.messageSender.SendMessage(syncRequest)
+	err = s.messageSender.SendMessage(syncResponse)
+	if err != nil {
+		return err
+	}
+	err = s.messageSender.SendMessage(syncRequest)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }

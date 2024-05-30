@@ -17,9 +17,10 @@ var (
 
 type Peer struct {
 	Address         string
+	ID              string
 	connections     []network.NetworkConnection
 	handlers        map[network.OperationType]MessageHandler
-	messageSender   MessageSender
+	messageSender   *MessageSender
 	securityContext p_service.SecurityValidater
 	storage         store.NetworkMessageStoragePort
 }
@@ -32,7 +33,7 @@ func GetPeerInstance() *Peer {
 
 		handlers := map[network.OperationType]MessageHandler{
 			network.SEND_MESSAGE:   NewSendMessageHandler(nil, storage),
-			network.SYNC_REQUEST:   NewSyncRequestHandler(storage, storage, *sender),
+			network.SYNC_REQUEST:   NewSyncRequestHandler(storage, storage, sender),
 			network.SYNC_RESPONSE:  NewSyncResponseHandler(storage),
 			network.JOIN_CHAT:      NewJoinChatHandler(nil, storage),
 			network.LEAVE_CHAT:     NewLeaveChatHandler(nil, storage),
@@ -50,7 +51,7 @@ func GetPeerInstance() *Peer {
 			connections:     []network.NetworkConnection{},
 			securityContext: securityContext,
 			storage:         storage,
-			messageSender:   *sender,
+			messageSender:   sender,
 		}
 	})
 
@@ -96,7 +97,11 @@ func (p *Peer) Notify(message network.Message) error {
 		}
 
 		p.storage.StoreMessage(message)
-		return handler.HandleMessage(message)
+
+		if message.ReceiverID == p.ID {
+			return handler.HandleMessage(message)
+		}
+		return handler.HandleMessage(message) // TODO: return nil, this is just to test things.
 	}
 	return errors.New("invalid message operation")
 }

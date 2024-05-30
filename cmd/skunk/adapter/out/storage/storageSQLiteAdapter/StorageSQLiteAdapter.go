@@ -178,43 +178,45 @@ func (a *StorageSQLiteAdapter) GetMissingInternalMessages(chatID string, inputMe
 	}
 
 	// Prepare the query
-	query := `
-		SELECT id 
-		FROM (
-			SELECT ? AS id ` + strings.Repeat("UNION SELECT ? ", len(inputMessageIDs)-1) + `
-		) AS input_ids
-		WHERE id NOT IN (
-			SELECT message_id 
-			FROM Messages 
-			WHERE chat_id = ?
-		)`
-
-	// Prepare arguments
-	args := make([]interface{}, len(inputMessageIDs)+1)
-	for i, id := range inputMessageIDs {
-		args[i] = id
-	}
-	args[len(inputMessageIDs)] = chatID
+	query := `SELECT message_id FROM Messages WHERE chat_id = ?`
 
 	// Execute the query
-	rows, err := a.db.Query(query, args...)
+	rows, err := a.db.Query(query, chatID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
 	// Collect the results
-	var missingMessageIDs []string
+	var existingMessageIDs []string
 	for rows.Next() {
 		var messageID string
 		err := rows.Scan(&messageID)
 		if err != nil {
 			return nil, err
 		}
-		missingMessageIDs = append(missingMessageIDs, messageID)
+		existingMessageIDs = append(existingMessageIDs, messageID)
 	}
 
-	return missingMessageIDs, nil
+	diff := difference(inputMessageIDs, existingMessageIDs)
+
+	return diff, nil
+}
+
+func difference(inputMessageIDs, existingMessageIDs []string) []string {
+	idSet := make(map[string]struct{}, len(existingMessageIDs))
+	for _, id := range existingMessageIDs {
+		idSet[id] = struct{}{}
+	}
+
+	var diff []string
+	for _, id := range inputMessageIDs {
+		if _, found := idSet[id]; !found {
+			diff = append(diff, id)
+		}
+	}
+
+	return diff
 }
 
 func (a *StorageSQLiteAdapter) GetMissingExternalMessages(chatID string, inputMessageIDs []string) ([]string, error) {
