@@ -1,7 +1,6 @@
 package p_service
 
 import (
-	"encoding/json"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/store"
 )
@@ -96,17 +95,6 @@ func (s *SecurityContext) hasValidInvitation(peerID, chatID string) bool {
 }
 
 func (s *SecurityContext) validateSyncResponseMessages(message network.Message) bool {
-	var receivedMessages []network.Message
-	err := json.Unmarshal([]byte(message.Content), &receivedMessages)
-	if err != nil {
-		return false
-	}
-
-	for _, msg := range receivedMessages {
-		if msg.SenderID != message.SenderID {
-			return false
-		}
-	}
-
+	// TODO: implement
 	return true
 }
