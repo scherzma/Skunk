@@ -29,7 +29,7 @@ func newStorageSQLiteAdapter(dbPath string) *StorageSQLiteAdapter {
 
 	// Create tables if they don't exist
 	adapter := &StorageSQLiteAdapter{db: db}
-	adapter.CreateTables()
+	adapter.createTables()
 
 	return adapter
 }
@@ -42,7 +42,7 @@ func GetInstance(dbPath string) *StorageSQLiteAdapter {
 	return instance
 }
 
-func (a *StorageSQLiteAdapter) CreateTables() {
+func (a *StorageSQLiteAdapter) createTables() {
 	sqlCommands := "CREATE TABLE IF NOT EXISTS Chats (\n    chat_id VARCHAR(1024) NOT NULL CONSTRAINT Chats_pk PRIMARY KEY,\n    name VARCHAR(40) NOT NULL\n);\n\nCREATE TABLE IF NOT EXISTS Peers (\n    peer_id INTEGER NOT NULL CONSTRAINT Peers_pk PRIMARY KEY AUTOINCREMENT,\n    public_key VARCHAR(1024) NOT NULL,\n    address VARCHAR(1024) NOT NULL\n);\n\nCREATE TABLE IF NOT EXISTS ChatMembers (\n    chat_member_id INTEGER NOT NULL CONSTRAINT ChatMembers_pk PRIMARY KEY AUTOINCREMENT,\n    date INTEGER NOT NULL,\n    peer_id VARCHAR(1024) NOT NULL CONSTRAINT ChatMembers_Peers_peer_id_fk REFERENCES Peers ON UPDATE CASCADE,\n    chat_id VARCHAR(1024) NOT NULL CONSTRAINT ChatMembers_Chats_chat_id_fk REFERENCES Chats ON UPDATE CASCADE,\n    username VARCHAR(50)\n);\n\nCREATE TABLE IF NOT EXISTS Messages (\n    message_id VARCHAR(1024) NOT NULL CONSTRAINT Messages_pk PRIMARY KEY,\n    content TEXT,\n    date INTEGER NOT NULL,\n    operation INTEGER NOT NULL,\n    sender_peer_id VARCHAR(1024) NOT NULL CONSTRAINT Messages_Peers_peer_id_fk REFERENCES Peers ON UPDATE CASCADE,\n    chat_id VARCHAR(1024) NOT NULL CONSTRAINT Messages_Chats_chat_id_fk REFERENCES Chats ON UPDATE CASCADE,\n    receiver_peer_id VARCHAR(1024) NOT NULL CONSTRAINT Messages_Peers_peer_id_fk_2 REFERENCES Peers,\n    sender_address VARCHAR(1024) NOT NULL,\n    receiver_address VARCHAR(1024) NOT NULL\n);\n\nCREATE TABLE IF NOT EXISTS Invitations (\n    invitation_id INTEGER NOT NULL CONSTRAINT Invitations_pk PRIMARY KEY AUTOINCREMENT,\n    invitation_status INTEGER NOT NULL,\n    message_id VARCHAR(1024) NOT NULL CONSTRAINT Invitations_Messages_message_id_fk REFERENCES Messages\n);\n\nCREATE TABLE IF NOT EXISTS PeersInInvitedChat (\n    public_key VARCHAR(1024) NOT NULL,\n    invited_peer_id INTEGER NOT NULL CONSTRAINT PeersInInvitedChat_pk PRIMARY KEY AUTOINCREMENT,\n    address VARCHAR(1024) NOT NULL,\n    invitation_id INTEGER NOT NULL CONSTRAINT PeersInInvitedChat_Invitations_invitation_id_fk REFERENCES Invitations\n);\n"
 	_, err := a.db.Exec(sqlCommands)
 	if err != nil {
@@ -71,14 +71,14 @@ func (a *StorageSQLiteAdapter) SetPeerUsername(username, peerID, chatID string) 
 	return err
 }
 
-func (a *StorageSQLiteAdapter) PeerJoinedChat(peerID, chatID string) error {
-	stmt, err := a.db.Prepare("INSERT INTO ChatMembers (date, peer_id, chat_id) SELECT datetime('now'), ?, ? WHERE NOT EXISTS (SELECT 1 FROM ChatMembers WHERE peer_id = ? AND chat_id = ?)")
+func (a *StorageSQLiteAdapter) PeerJoinedChat(timestamp int64, peerID, chatID string) error {
+	stmt, err := a.db.Prepare("INSERT INTO ChatMembers (date, peer_id, chat_id) SELECT ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM ChatMembers WHERE peer_id = ? AND chat_id = ?)")
 	if err != nil {
 		return err
 	}
 	defer stmt.Close()
 
-	_, err = stmt.Exec(peerID, chatID, peerID, chatID)
+	_, err = stmt.Exec(timestamp, peerID, chatID, peerID, chatID)
 	return err
 }
 
@@ -145,6 +145,7 @@ func (a *StorageSQLiteAdapter) PeerGotInvitedToChat(peerId string, chatId string
 	return nil
 }
 
+// TODO: Rework
 func (a *StorageSQLiteAdapter) GetInvitations(peerID string) ([]string, error) {
 	rows, err := a.db.Query(`
 		SELECT m.*, i.invitation_status 
@@ -170,31 +171,50 @@ func (a *StorageSQLiteAdapter) GetInvitations(peerID string) ([]string, error) {
 	return invitations, nil
 }
 
+// GetMissingInternalMessages retrieves the message IDs from inputMessageIDs that are not present in the Messages table for the specified chatID.
 func (a *StorageSQLiteAdapter) GetMissingInternalMessages(chatID string, inputMessageIDs []string) ([]string, error) {
-	query := "SELECT message_id FROM Messages WHERE chat_id = ? AND message_id NOT IN (?" + strings.Repeat(",?", len(inputMessageIDs)-1) + ")"
-	args := make([]interface{}, len(inputMessageIDs)+1)
-	args[0] = chatID
-	for i, id := range inputMessageIDs {
-		args[i+1] = id
+	if len(inputMessageIDs) == 0 {
+		return nil, nil
 	}
 
+	// Prepare the query
+	query := `
+		SELECT id 
+		FROM (
+			SELECT ? AS id ` + strings.Repeat("UNION SELECT ? ", len(inputMessageIDs)-1) + `
+		) AS input_ids
+		WHERE id NOT IN (
+			SELECT message_id 
+			FROM Messages 
+			WHERE chat_id = ?
+		)`
+
+	// Prepare arguments
+	args := make([]interface{}, len(inputMessageIDs)+1)
+	for i, id := range inputMessageIDs {
+		args[i] = id
+	}
+	args[len(inputMessageIDs)] = chatID
+
+	// Execute the query
 	rows, err := a.db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var messages []string
+	// Collect the results
+	var missingMessageIDs []string
 	for rows.Next() {
-		var message string
-		err := rows.Scan(&message)
+		var messageID string
+		err := rows.Scan(&messageID)
 		if err != nil {
 			return nil, err
 		}
-		messages = append(messages, message)
+		missingMessageIDs = append(missingMessageIDs, messageID)
 	}
 
-	return messages, nil
+	return missingMessageIDs, nil
 }
 
 func (a *StorageSQLiteAdapter) GetMissingExternalMessages(chatID string, inputMessageIDs []string) ([]string, error) {
@@ -322,7 +342,7 @@ func (a *StorageSQLiteAdapter) GetUsername(peerID, chatID string) (string, error
 }
 
 func (a *StorageSQLiteAdapter) GetUsersInChat(chatID string) ([]store.User, error) {
-	rows, err := a.db.Query("SELECT peer_id, chat_id, username FROM ChatMembers WHERE chat_id = ?", chatID)
+	rows, err := a.db.Query("SELECT peer_id, username FROM ChatMembers WHERE chat_id = ?", chatID)
 	if err != nil {
 		return nil, err
 	}
@@ -331,9 +351,16 @@ func (a *StorageSQLiteAdapter) GetUsersInChat(chatID string) ([]store.User, erro
 	var users []store.User
 	for rows.Next() {
 		var user store.User
-		err := rows.Scan(&user.UserId, &user.Username)
+		var username sql.NullString
+		err := rows.Scan(&user.UserId, &username)
 		if err != nil {
 			return nil, err
+		}
+		// Check if username is valid
+		if username.Valid {
+			user.Username = username.String
+		} else {
+			user.Username = "" // or any default value you prefer for NULL usernames
 		}
 		users = append(users, user)
 	}

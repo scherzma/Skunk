@@ -1,42 +1,80 @@
 package test
 
 import (
+	"fmt"
 	"github.com/scherzma/Skunk/cmd/skunk/adapter/in/networkMockAdapter"
-	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_model"
-	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_service"
+	"github.com/scherzma/Skunk/cmd/skunk/adapter/out/storage/storageSQLiteAdapter"
+	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_service/messageHandlers"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+	"os"
 	"testing"
 )
 
-// TestSyncRequestHandler tests the SyncRequestHandler message handler.
-// It sets up a mock network connection, sends a test message to the peer,
-// and then sends a sync request message to trigger the sync process.
-// It also creates some internal messages and adds them to the chat repository.
 func TestSyncRequestHandler(t *testing.T) {
+	// Create a temporary database for testing
+	dbPath := "test_sync_request.db"
+	defer os.Remove(dbPath)
+
+	// Initialize storage adapter
+	adapter := storageSQLiteAdapter.GetInstance(dbPath)
+
 	// Create a mock network connection
-	testMessage := network.Message{
-		Id:              "8888",
-		Timestamp:       1633029445,
-		Content:         "Hello World!",
-		SenderID:        "user1",
-		ReceiverID:      "user2",
-		SenderAddress:   "user1.onion",
-		ReceiverAddress: "user2.onion",
-		ChatID:          "chat1",
-		Operation:       network.TEST_MESSAGE,
-	}
-
-	peer := p_service.GetPeerInstance()
-
 	mockNetworkConnection := networkMockAdapter.GetMockConnection()
+
+	// Create a peer and add the mock network connection
+	peer := messageHandlers.GetPeerInstance()
 	peer.AddNetworkConnection(mockNetworkConnection)
 
-	mockNetworkConnection.SendMockNetworkMessageToSubscribers(testMessage)
+	// Create some internal messages
+	internalMessages := []network.Message{
+		{
+			Id:              "msgMsg3",
+			Timestamp:       1633029448,
+			Content:         "LOOOOOOOOOOOOOOOOOOOOOOOL",
+			SenderID:        "user3",
+			ReceiverID:      "user4",
+			SenderAddress:   "user3.onion",
+			ReceiverAddress: "user4.onion",
+			ChatID:          "chat1",
+			Operation:       network.SEND_MESSAGE,
+		},
+		{
+			Id:              "msgMsg4",
+			Timestamp:       1633029448,
+			Content:         "WOOW",
+			SenderID:        "user3",
+			ReceiverID:      "user4",
+			SenderAddress:   "user3.onion",
+			ReceiverAddress: "user4.onion",
+			ChatID:          "chat1",
+			Operation:       network.SEND_MESSAGE,
+		},
+		{
+			Id:              "msgMsg5",
+			Timestamp:       1633029448,
+			Content:         "WOLOLOW",
+			SenderID:        "user3",
+			ReceiverID:      "user4",
+			SenderAddress:   "user3.onion",
+			ReceiverAddress: "user4.onion",
+			ChatID:          "chat2",
+			Operation:       network.SEND_MESSAGE,
+		},
+	}
 
+	// Store internal messages
+	for _, msg := range internalMessages {
+		err := adapter.StoreMessage(msg)
+		if err != nil {
+			t.Errorf("Error storing internal message: %v", err)
+		}
+	}
+
+	// Prepare a sync request message
 	testSyncMessage := network.Message{
-		Id:              "12345",
+		Id:              "syncMsg2",
 		Timestamp:       1633029446,
-		Content:         "{\"existingMessageIds\": [\"<message id 1>\",\"<message id 2>\"]}",
+		Content:         "{\"existingMessageIds\": [\"msgMsg5\",\"msg2\"]}",
 		SenderID:        "user1",
 		ReceiverID:      "user2",
 		SenderAddress:   "user1.onion",
@@ -45,50 +83,11 @@ func TestSyncRequestHandler(t *testing.T) {
 		Operation:       network.SYNC_REQUEST,
 	}
 
-	internalMessage := network.Message{
-		Id:              "internalMessage123!",
-		Timestamp:       1633029448,
-		Content:         "LOOOOOOOOOOOOOOOOOOOOOOOL",
-		SenderID:        "user3",
-		ReceiverID:      "user4",
-		SenderAddress:   "user3.onion",
-		ReceiverAddress: "user4.onion",
-		ChatID:          "chat1",
-		Operation:       network.SYNC_REQUEST,
-	}
+	adapter.PeerJoinedChat(3214523465, "user1", "chat1")
 
-	internalMessage2 := network.Message{
-		Id:              "internalMessage2",
-		Timestamp:       1633029448,
-		Content:         "WOOW",
-		SenderID:        "user3",
-		ReceiverID:      "user4",
-		SenderAddress:   "user3.onion",
-		ReceiverAddress: "user4.onion",
-		ChatID:          "chat1",
-		Operation:       network.SYNC_REQUEST,
-	}
-
-	internalMessage3 := network.Message{
-		Id:              "internalMessage3",
-		Timestamp:       1633029448,
-		Content:         "WOLOLOW",
-		SenderID:        "user3",
-		ReceiverID:      "user4",
-		SenderAddress:   "user3.onion",
-		ReceiverAddress: "user4.onion",
-		ChatID:          "chat2",
-		Operation:       network.SYNC_REQUEST,
-	}
-
-	chat := p_model.GetNetworkChatsInstance().GetChat(internalMessage.ChatID)
-	chat.AddMessage(internalMessage)
-	chat.AddMessage(internalMessage2)
-
-	chat2 := p_model.GetNetworkChatsInstance().GetChat(internalMessage3.ChatID)
-	chat2.AddMessage(internalMessage3)
-
+	// Send the sync request message to trigger the sync process
 	mockNetworkConnection.SendMockNetworkMessageToSubscribers(testSyncMessage)
 
-	// TODO: Improve test
+	fmt.Println(mockNetworkConnection.LastSent)
+
 }

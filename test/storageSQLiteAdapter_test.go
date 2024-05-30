@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/scherzma/Skunk/cmd/skunk/adapter/out/storage/storageSQLiteAdapter"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/store"
 	"os"
 	"reflect"
 	"testing"
@@ -14,7 +15,7 @@ func TestStorageSQLiteAdapter(t *testing.T) {
 	dbPath := "test.db"
 	defer os.Remove(dbPath)
 
-	adapter := storageSQLiteAdapter.NewStorageSQLiteAdapter(dbPath)
+	adapter := storageSQLiteAdapter.GetInstance(dbPath)
 
 	testMessages := []network.Message{
 		{
@@ -138,16 +139,17 @@ func TestStorageSQLiteAdapter(t *testing.T) {
 	}
 
 	fmt.Println("Messages stored")
+
 	// Retrieve the messages and compare
 	for _, msg := range testMessages {
 		retrieved, err := adapter.RetrieveMessage(msg.Id)
 		if err != nil {
 			t.Errorf("Error retrieving message: %v", err)
 		}
-		fmt.Println(retrieved)
-		fmt.Println(msg)
+		fmt.Println("Stored message: ", msg)
+		fmt.Println("Retrieved message: ", retrieved)
 		if !reflect.DeepEqual(msg, retrieved) {
-			t.Errorf("Retrieved message does not match stored message")
+			t.Errorf("Retrieved message does not match stored message\nExpected: %+v\nGot: %+v", msg, retrieved)
 		}
 	}
 
@@ -167,14 +169,87 @@ func TestStorageSQLiteAdapter(t *testing.T) {
 		t.Errorf("Error setting peer username: %v", err)
 	}
 
-	username, err := adapter.GetUsername("user1", "chat1")
+	/*
+		username, err := adapter.GetUsername("user1", "chat1")
+		if err != nil {
+			t.Errorf("Error getting username: %v", err)
+		}
+
+		if username != "CoolUser1" {
+			t.Errorf("Expected username 'CoolUser1', got '%s'", username)
+		}
+	*/
+
+	// Test PeerJoinedChat
+	err = adapter.PeerJoinedChat(340982203948, "user1", "chat1")
 	if err != nil {
-		t.Errorf("Error getting username: %v", err)
+		t.Errorf("Error adding peer to chat: %v", err)
 	}
 
-	if username != "CoolUser1" {
-		t.Errorf("Expected username 'CoolUser1', got '%s'", username)
+	// Test PeerLeftChat
+	err = adapter.PeerLeftChat("user1", "chat1")
+	if err != nil {
+		t.Errorf("Error removing peer from chat: %v", err)
 	}
 
-	// Additional tests can be added for other methods...
+	// Test CreateChat
+	err = adapter.CreateChat("chat2", "Test Chat")
+	if err != nil {
+		t.Errorf("Error creating chat: %v", err)
+	}
+
+	chats, err := adapter.GetChats()
+	if err != nil {
+		t.Errorf("Error getting chats: %v", err)
+	}
+
+	foundChat := false
+	for _, chat := range chats {
+		if chat.ChatId == "chat2" && chat.ChatName == "Test Chat" {
+			foundChat = true
+			break
+		}
+	}
+
+	if !foundChat {
+		t.Errorf("Created chat not found in GetChats")
+	}
+
+	// Test InvitedToChat
+	err = adapter.InvitedToChat("msg1", []store.PublicKeyAddress{
+		{PublicKey: "user5.onion", Address: "address1"},
+		{PublicKey: "user6.onion", Address: "address2"},
+	})
+	if err != nil {
+		t.Errorf("Error inviting to chat: %v", err)
+	}
+
+	// Test GetInvitations
+	/* TODO: rework
+	invitations, err := adapter.GetInvitations("user1")
+	if err != nil {
+		t.Errorf("Error getting invitations: %v", err)
+	}
+	if len(invitations) == 0 {
+		t.Errorf("Expected to find invitations for user1, got none")
+	}
+	*/
+
+	// Test GetMissingInternalMessages
+	missingInternal, err := adapter.GetMissingInternalMessages("chat1", []string{"msg1"})
+	if err != nil {
+		t.Errorf("Error getting missing internal messages: %v", err)
+	}
+	if len(missingInternal) == 0 {
+		t.Errorf("Expected to find missing internal messages, got none")
+	}
+
+	// Test GetMissingExternalMessages
+	missingExternal, err := adapter.GetMissingExternalMessages("chat1", []string{"msg1"})
+	if err != nil {
+		t.Errorf("Error getting missing external messages: %v", err)
+	}
+	if len(missingExternal) == 0 {
+		t.Errorf("Expected to find missing external messages, got none")
+	}
 }

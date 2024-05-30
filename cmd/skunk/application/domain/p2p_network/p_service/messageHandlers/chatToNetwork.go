@@ -1,19 +1,18 @@
-package p_service
+package messageHandlers
 
 import (
 	"github.com/google/uuid"
-	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_service/messageHandlers"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/store"
 	"time"
 )
 
 type ChatToNetwork struct {
-	sender  *messageHandlers.MessageSender
+	sender  *MessageSender
 	storage store.Storage
 }
 
-func NewChatToNetwork(sender *messageHandlers.MessageSender, chatActionStorage store.Storage) *ChatToNetwork {
+func NewChatToNetwork(sender *MessageSender, chatActionStorage store.Storage) *ChatToNetwork {
 	return &ChatToNetwork{
 		sender:  sender,
 		storage: chatActionStorage,
@@ -30,14 +29,16 @@ func (c *ChatToNetwork) CreateChat(chatId string, chatName string) error {
 }
 
 func (c *ChatToNetwork) JoinChat(chatId string) error {
-	err := c.storage.PeerJoinedChat("self", chatId)
+	timestamp := time.Now().UnixNano()
+
+	err := c.storage.PeerJoinedChat(timestamp, "self", chatId)
 	if err != nil {
 		return err
 	}
 
 	message := network.Message{
 		Id:              uuid.New().String(),
-		Timestamp:       time.Now().UnixNano(),
+		Timestamp:       timestamp,
 		Content:         "",
 		SenderID:        "self",
 		ReceiverID:      "?",

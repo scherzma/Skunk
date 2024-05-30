@@ -51,6 +51,10 @@ func (s *SecurityContext) ValidateIncomingMessage(message network.Message) bool 
 		return s.isMemberOfChat(message.SenderID, message.ChatID)
 	case network.SET_USERNAME:
 		return s.isMemberOfChat(message.SenderID, message.ChatID)
+	case network.TEST_MESSAGE:
+		return true
+	case network.TEST_MESSAGE_2:
+		return true
 	default:
 		return false
 	}

@@ -15,6 +15,7 @@ var (
 
 type MockConnection struct {
 	subscriber network.NetworkObserver
+	LastSent   network.Message
 }
 
 func GetMockConnection() *MockConnection {
@@ -45,9 +46,10 @@ func (m *MockConnection) UnsubscribeFromNetwork() error {
 }
 
 // SendMessageToNetworkPeer is a mock function for the network
-func (m *MockConnection) SendMessageToNetworkPeer(address string, message network.Message) error {
-	fmt.Println("Sending message to: " + address)
+func (m *MockConnection) SendMessageToNetworkPeer(message network.Message) error {
+	fmt.Println("Sending message to: " + message.ReceiverAddress)
 	fmt.Println("Message: ", message)
+	m.LastSent = message
 	return nil
 }
 

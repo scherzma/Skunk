@@ -2,7 +2,7 @@ package test
 
 import (
 	"github.com/scherzma/Skunk/cmd/skunk/adapter/in/networkMockAdapter"
-	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_service"
+	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_service/messageHandlers"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
 	"github.com/stretchr/testify/assert"
 	"testing"
@@ -11,8 +11,8 @@ import (
 // TestGetPeerInstance tests the GetPeerInstance function of the messageHandlers package.
 // It verifies that the function returns the same instance when called multiple times.
 func TestGetPeerInstance(t *testing.T) {
-	peer1 := p_service.GetPeerInstance()
-	peer2 := p_service.GetPeerInstance()
+	peer1 := messageHandlers.GetPeerInstance()
+	peer2 := messageHandlers.GetPeerInstance()
 
 	if peer1 != peer2 {
 		t.Errorf("GetPeerInstance() failed, expected same instance, got different instances")
@@ -23,7 +23,7 @@ func TestGetPeerInstance(t *testing.T) {
 // It creates a test message and sends it to the peer using the Notify method.
 // It asserts that no error is returned.
 func TestNotify(t *testing.T) {
-	peer := p_service.GetPeerInstance()
+	peer := messageHandlers.GetPeerInstance()
 
 	testMessage := network.Message{
 		Id:              "8888",
@@ -50,11 +50,10 @@ func TestNotify(t *testing.T) {
 // It asserts that no error is returned in both cases.
 func TestSubscribeAndUnsubscribeToNetwork(t *testing.T) {
 	mockConnection := networkMockAdapter.GetMockConnection()
-	peer := p_service.GetPeerInstance()
+	peer := messageHandlers.GetPeerInstance()
 
-	err := mockConnection.SubscribeToNetwork(peer)
-	assert.NoError(t, err, "SubscribeToNetwork() failed, expected nil, got error")
+	err := peer.AddNetworkConnection(mockConnection)
+	assert.NoError(t, err, "AddNetworkConnection() failed, expected nil, got error")
 
-	err = mockConnection.UnsubscribeFromNetwork()
-	assert.NoError(t, err, "UnsubscribeFromNetwork() failed, expected nil, got error")
+	peer.RemoveNetworkConnection(mockConnection)
 }

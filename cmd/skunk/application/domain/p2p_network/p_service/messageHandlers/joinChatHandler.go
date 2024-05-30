@@ -23,7 +23,7 @@ func NewJoinChatHandler(userChatLogic chat.ChatLogic, chatActionStorage store.Ch
 func (j *joinChatHandler) HandleMessage(message network.Message) error {
 
 	// Update chat invitation storage
-	err := j.chatActionStorage.PeerJoinedChat(message.SenderID, message.ChatID)
+	err := j.chatActionStorage.PeerJoinedChat(message.Timestamp, message.SenderID, message.ChatID)
 	if err != nil {
 		fmt.Println("Error updating chat invitation storage")
 		return err

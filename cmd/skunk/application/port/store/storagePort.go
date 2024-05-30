@@ -7,7 +7,7 @@ type UserMessageStoragePort interface {
 }
 
 type ChatActionStoragePort interface {
-	PeerJoinedChat(peerId string, chatId string) error
+	PeerJoinedChat(timestamp int64, peerId string, chatId string) error
 	PeerLeftChat(peerId string, chatId string) error
 	ChatCreated(chatName string, chatId string) error // Ensure this line exists
 }

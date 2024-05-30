@@ -1,10 +1,10 @@
-package p_service
+package messageHandlers
 
 import (
 	"errors"
 	"fmt"
 	"github.com/scherzma/Skunk/cmd/skunk/adapter/out/storage/storageSQLiteAdapter"
-	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_service/messageHandlers"
+	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_service"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/store"
 	"sync"
@@ -18,30 +18,30 @@ var (
 type Peer struct {
 	Address         string
 	connections     []network.NetworkConnection
-	handlers        map[network.OperationType]messageHandlers.MessageHandler
-	messageSender   messageHandlers.MessageSender
-	securityContext SecurityValidater
+	handlers        map[network.OperationType]MessageHandler
+	messageSender   MessageSender
+	securityContext p_service.SecurityValidater
 	storage         store.NetworkMessageStoragePort
 }
 
 func GetPeerInstance() *Peer {
 	once.Do(func() {
 		storage := storageSQLiteAdapter.GetInstance("skunk.db")
-		securityContext := NewSecurityContext(storage, storage, storage)
-		sender := messageHandlers.NewMessageSender(securityContext)
+		securityContext := p_service.NewSecurityContext(storage, storage, storage)
+		sender := NewMessageSender(securityContext)
 
-		handlers := map[network.OperationType]messageHandlers.MessageHandler{
-			network.SEND_MESSAGE:   messageHandlers.NewSendMessageHandler(nil, storage),
-			network.SYNC_REQUEST:   messageHandlers.NewSyncRequestHandler(nil, storage),
-			network.SYNC_RESPONSE:  messageHandlers.NewSyncResponseHandler(storage),
-			network.JOIN_CHAT:      messageHandlers.NewJoinChatHandler(nil, storage),
-			network.LEAVE_CHAT:     messageHandlers.NewLeaveChatHandler(nil, storage),
-			network.INVITE_TO_CHAT: messageHandlers.NewInviteToChatHandler(nil, storage),
-			network.SEND_FILE:      messageHandlers.NewSendFileHandler(nil, storage),
-			network.SET_USERNAME:   messageHandlers.NewSetUsernameHandler(nil, storage),
-			network.NETWORK_ONLINE: &messageHandlers.NetworkOnlineHandler{},
-			network.TEST_MESSAGE:   &messageHandlers.TestMessageHandler{},
-			network.TEST_MESSAGE_2: &messageHandlers.TestMessageHandler2{},
+		handlers := map[network.OperationType]MessageHandler{
+			network.SEND_MESSAGE:   NewSendMessageHandler(nil, storage),
+			network.SYNC_REQUEST:   NewSyncRequestHandler(storage, storage, *sender),
+			network.SYNC_RESPONSE:  NewSyncResponseHandler(storage),
+			network.JOIN_CHAT:      NewJoinChatHandler(nil, storage),
+			network.LEAVE_CHAT:     NewLeaveChatHandler(nil, storage),
+			network.INVITE_TO_CHAT: NewInviteToChatHandler(nil, storage),
+			network.SEND_FILE:      NewSendFileHandler(nil, storage),
+			network.SET_USERNAME:   NewSetUsernameHandler(nil, storage),
+			network.NETWORK_ONLINE: &NetworkOnlineHandler{},
+			network.TEST_MESSAGE:   &TestMessageHandler{},
+			network.TEST_MESSAGE_2: &TestMessageHandler2{},
 		}
 
 		peerInstance = &Peer{

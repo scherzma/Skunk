@@ -30,7 +30,11 @@ func (l *leaveChatHandler) HandleMessage(message network.Message) error {
 	}
 
 	// Handle peer leaving the chat
-	l.userChatLogic.PeerLeavesChat(message.SenderID, message.ChatID)
+	err1 := l.userChatLogic.PeerLeavesChat(message.SenderID, message.ChatID)
+	if err1 != nil {
+		fmt.Println("Error handling peer leaving the chat")
+		return err1
+	}
 
 	return nil
 }

@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/cretz/bine/tor"
-	"github.com/ooni/go-libtor"
+	"github.com/ipsn/go-libtor"
 )
 
 // TorConfig holds configuration parameters for a Tor instance.
