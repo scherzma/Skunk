@@ -65,27 +65,7 @@ func (s *sendFileHandler) HandleMessage(message network.Message) error {
 	}
 
 	// Create the file path
-	filePath := filepath.Join(fileDir, fmt.Sprintf("%s.%s", content.FileName, content.FileExtension))
-
-	// Check if the file already exists
-	if _, err := os.Stat(filePath); err == nil {
-		// File exists, compare hashes
-		existingHash, err := computeFileHash(filePath)
-		if err != nil {
-			fmt.Println("Error computing hash of existing file")
-			return err
-		}
-
-		newFileHash := computeHash(fileData)
-		if existingHash == newFileHash {
-			// Hashes are the same, use the existing file
-			s.userChatLogic.ReceiveFile(message.SenderID, message.ChatID, filePath)
-			return nil
-		} else {
-			// Hashes are different, modify the file name
-			filePath = getUniqueFilePath(fileDir, content.FileName, content.FileExtension)
-		}
-	}
+	filePath := getFilePathConsideringHash(fileDir, content.FileName, content.FileExtension, fileData)
 
 	// Write the file data to the file
 	if err := os.WriteFile(filePath, fileData, os.ModePerm); err != nil {
@@ -97,6 +77,38 @@ func (s *sendFileHandler) HandleMessage(message network.Message) error {
 	s.userChatLogic.ReceiveFile(message.SenderID, message.ChatID, filePath)
 
 	return nil
+}
+
+// getFilePathConsideringHash checks existing files for hash matches and generates unique file paths if necessary
+func getFilePathConsideringHash(dir, baseName, ext string, newData []byte) string {
+	newFileHash := computeHash(newData)
+	baseFilePath := filepath.Join(dir, fmt.Sprintf("%s.%s", baseName, ext))
+
+	// Check if the base file already exists
+	if _, err := os.Stat(baseFilePath); err == nil {
+		existingHash, err := computeFileHash(baseFilePath)
+		if err == nil && existingHash == newFileHash {
+			return baseFilePath
+		}
+	} else if os.IsNotExist(err) {
+		return baseFilePath
+	}
+
+	// If the base file path does not match, check for files with incremented names
+	counter := 1
+	for {
+		newFileName := fmt.Sprintf("%s_%d.%s", baseName, counter, ext)
+		newFilePath := filepath.Join(dir, newFileName)
+		if _, err := os.Stat(newFilePath); err == nil {
+			existingHash, err := computeFileHash(newFilePath)
+			if err == nil && existingHash == newFileHash {
+				return newFilePath
+			}
+		} else if os.IsNotExist(err) {
+			return newFilePath
+		}
+		counter++
+	}
 }
 
 // computeFileHash computes the SHA-256 hash of a file
@@ -120,17 +132,4 @@ func computeHash(data []byte) string {
 	hash := sha256.New()
 	hash.Write(data)
 	return hex.EncodeToString(hash.Sum(nil))
-}
-
-// getUniqueFilePath generates a unique file path by appending a counter to the file name
-func getUniqueFilePath(dir, baseName, ext string) string {
-	counter := 1
-	for {
-		newFileName := fmt.Sprintf("%s_%d.%s", baseName, counter, ext)
-		newFilePath := filepath.Join(dir, newFileName)
-		if _, err := os.Stat(newFilePath); os.IsNotExist(err) {
-			return newFilePath
-		}
-		counter++
-	}
 }

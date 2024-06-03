@@ -7,9 +7,17 @@ type MockChatLogic struct {
 	LastChatId      string
 	LastChatName    string
 	LastChatMembers []string
+	LastFileName    string
+	LastFileSize    int
+	LastFileData    string
+	LastMessage     string
+	LastUsername    string
 }
 
 func (m *MockChatLogic) ReceiveMessage(senderId string, chatId string, message string) error {
+	m.LastSenderId = senderId
+	m.LastChatId = chatId
+	m.LastMessage = message
 	return nil
 }
 
@@ -33,9 +41,17 @@ func (m *MockChatLogic) PeerJoinsChat(senderId string, chatId string) error {
 	return nil
 }
 func (m *MockChatLogic) ReceiveFile(senderId string, chatId string, filePath string) error {
+	m.LastSenderId = senderId
+	m.LastChatId = chatId
+	m.LastFileName = filePath
+	fmt.Printf("Received file from %s in chat %s: %s\n", senderId, chatId, filePath)
 	return nil
 }
 
 func (m *MockChatLogic) PeerSetsUsername(senderId string, chatId string, username string) error {
+	m.LastSenderId = senderId
+	m.LastChatId = chatId
+	m.LastUsername = username
+	fmt.Printf("Peer %s set username to %s in chat %s\n", senderId, username, chatId) // Add a print statement for debugging
 	return nil
 }

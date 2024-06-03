@@ -47,3 +47,6 @@ go.work
 test/*
 !test/*
 test/*/**
+
+script.py
+output.txt
