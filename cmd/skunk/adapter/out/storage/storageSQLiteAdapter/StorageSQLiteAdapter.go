@@ -148,10 +148,11 @@ func (a *StorageSQLiteAdapter) PeerGotInvitedToChat(peerId string, chatId string
 // TODO: Rework
 func (a *StorageSQLiteAdapter) GetInvitations(peerID string) ([]string, error) {
 	rows, err := a.db.Query(`
-		SELECT m.*, i.invitation_status 
+		SELECT m.chat_id
 		FROM Messages m
-		JOIN Invitations i ON i.message_id = m.message_id
-		WHERE m.receiver_peer_id = ? AND m.operation = ?
+         JOIN Invitations i ON i.message_id = m.message_id
+         JOIN Peers p ON m.receiver_peer_id = p.peer_id
+		WHERE p.public_key = ? AND m.operation = ?
 	`, peerID, network.INVITE_TO_CHAT)
 	if err != nil {
 		return nil, err

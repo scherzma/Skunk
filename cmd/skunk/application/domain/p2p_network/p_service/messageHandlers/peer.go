@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/scherzma/Skunk/cmd/skunk/adapter/out/storage/storageSQLiteAdapter"
+	"github.com/scherzma/Skunk/cmd/skunk/application/domain/chat/c_service"
 	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_service"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/store"
@@ -30,16 +31,17 @@ func GetPeerInstance() *Peer {
 		storage := storageSQLiteAdapter.GetInstance("skunk.db")
 		securityContext := p_service.NewSecurityContext(storage, storage, storage)
 		sender := NewMessageSender(securityContext)
+		chatLogic := c_service.GetChatServiceInstance()
 
 		handlers := map[network.OperationType]MessageHandler{
-			network.SEND_MESSAGE:   NewSendMessageHandler(nil, storage),
+			network.SEND_MESSAGE:   NewSendMessageHandler(chatLogic, storage),
 			network.SYNC_REQUEST:   NewSyncRequestHandler(storage, storage, sender),
 			network.SYNC_RESPONSE:  NewSyncResponseHandler(storage),
-			network.JOIN_CHAT:      NewJoinChatHandler(nil, storage),
-			network.LEAVE_CHAT:     NewLeaveChatHandler(nil, storage),
-			network.INVITE_TO_CHAT: NewInviteToChatHandler(nil, storage),
-			network.SEND_FILE:      NewSendFileHandler(nil, storage),
-			network.SET_USERNAME:   NewSetUsernameHandler(nil, storage),
+			network.JOIN_CHAT:      NewJoinChatHandler(chatLogic, storage),
+			network.LEAVE_CHAT:     NewLeaveChatHandler(chatLogic, storage),
+			network.INVITE_TO_CHAT: NewInviteToChatHandler(chatLogic, storage),
+			network.SEND_FILE:      NewSendFileHandler(chatLogic, storage),
+			network.SET_USERNAME:   NewSetUsernameHandler(chatLogic, storage),
 			network.NETWORK_ONLINE: &NetworkOnlineHandler{},
 			network.TEST_MESSAGE:   &TestMessageHandler{},
 			network.TEST_MESSAGE_2: &TestMessageHandler2{},

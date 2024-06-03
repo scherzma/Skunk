@@ -53,3 +53,35 @@ func (c *ChatApp) ProcessMessageForUser(message frontend.FrontendMessage) error 
 	// TODO: Implement
 	return nil
 }
+
+// Implementing ChatLogic interface
+
+func (c *ChatApp) ReceiveMessage(senderId string, chatId string, message string) error {
+	// TODO: Implement logic to handle received message
+	return nil
+}
+
+func (c *ChatApp) ReceiveChatInvitation(senderId string, chatId string, chatName string, chatMembers []string) error {
+	// TODO: Implement logic to handle received chat invitation
+	return nil
+}
+
+func (c *ChatApp) PeerLeavesChat(senderId string, chatId string) error {
+	// TODO: Implement logic to handle peer leaving chat
+	return nil
+}
+
+func (c *ChatApp) PeerJoinsChat(senderId string, chatId string) error {
+	// TODO: Implement logic to handle peer joining chat
+	return nil
+}
+
+func (c *ChatApp) ReceiveFile(senderId string, chatId string, filePath string) error {
+	// TODO: Implement logic to handle received file
+	return nil
+}
+
+func (c *ChatApp) PeerSetsUsername(senderId string, chatId string, username string) error {
+	// TODO: Implement logic to handle peer setting username
+	return nil
+}

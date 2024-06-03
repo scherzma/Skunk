@@ -12,37 +12,6 @@ import (
 	"testing"
 )
 
-type MockChatLogic struct {
-	LastSenderId    string
-	LastChatId      string
-	LastChatName    string
-	LastChatMembers []string
-}
-
-func (m *MockChatLogic) ReceiveMessage(senderId string, chatId string, message string) error {
-	return nil
-}
-func (m *MockChatLogic) ReceiveChatInvitation(senderId string, chatId string, chatName string, chatMembers []string) error {
-	m.LastSenderId = senderId
-	m.LastChatId = chatId
-	m.LastChatName = chatName
-	m.LastChatMembers = chatMembers
-	fmt.Printf("Invitation received from %s to join chat %s (%s) with members %v\n", senderId, chatId, chatName, chatMembers)
-	return nil
-}
-func (m *MockChatLogic) PeerLeavesChat(senderId string, chatId string) error {
-	return nil
-}
-func (m *MockChatLogic) PeerJoinsChat(senderId string, chatId string) error {
-	return nil
-}
-func (m *MockChatLogic) ReceiveFile(senderId string, chatId string, filePath string) error {
-	return nil
-}
-func (m *MockChatLogic) PeerSetsUsername(senderId string, chatId string, username string) error {
-	return nil
-}
-
 func TestInviteToChatHandler(t *testing.T) {
 	// Create a temporary database for testing
 	dbPath := "test_invite_to_chat.db"
@@ -77,6 +46,9 @@ func TestInviteToChatHandler(t *testing.T) {
 		t.Fatalf("Error marshalling invite content: %v", err)
 	}
 
+	//inviteBytes := string(inviteContentBytes)
+	//fmt.Println(inviteBytes)
+
 	inviteMessage := network.Message{
 		Id:              "inviteMsg1",
 		Timestamp:       1633029460,
@@ -92,7 +64,7 @@ func TestInviteToChatHandler(t *testing.T) {
 	mockNetworkConnection.SendMockNetworkMessageToSubscribers(inviteMessage)
 
 	// Verify that the invitation was stored in the database
-	invitations, err := adapter.GetInvitations("user2")
+	invitations, err := adapter.GetInvitations("user2") //TODO make this usefull
 	if err != nil {
 		t.Fatalf("Error getting invitations: %v", err)
 	}
