@@ -39,8 +39,7 @@ func (s *syncResponseHandler) HandleMessage(message network.Message) error {
 			fmt.Println("Error storing message:", err)
 			return err
 		}
-		// Add the message to the chat repository
-		//chatMessageRepo.AddMessage(msg) TODO: change
+		// TODO: This should be processed by the peer. Not just saved to the database.
 	}
 
 	return nil

@@ -31,6 +31,8 @@ func (m *MockChatLogic) ReceiveChatInvitation(senderId string, chatId string, ch
 }
 
 func (m *MockChatLogic) PeerLeavesChat(senderId string, chatId string) error {
+	m.LastSenderId = senderId
+	m.LastChatId = chatId
 	return nil
 }
 

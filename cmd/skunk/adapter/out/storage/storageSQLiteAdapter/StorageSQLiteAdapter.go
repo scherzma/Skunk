@@ -55,9 +55,36 @@ func (a *StorageSQLiteAdapter) ChatCreated(chatName string, chatId string) error
 	panic("implement me")
 }
 
-func (a *StorageSQLiteAdapter) PeerSetUsername(peerId string, chatId string, username string) error {
-	//TODO implement me
-	panic("implement me")
+func (a *StorageSQLiteAdapter) PeerSetUsername(peerID, chatID, username string) error {
+	// Check if the peer exists, and insert if not
+	err := a.insertPeerIfNotExists(peerID, "")
+	if err != nil {
+		return err
+	}
+
+	// Check if the chat exists, and return an error if not
+	var count int
+	err = a.db.QueryRow("SELECT COUNT(*) FROM Chats WHERE chat_id = ?", chatID).Scan(&count)
+	if err != nil {
+		return err
+	}
+	if count == 0 {
+		return fmt.Errorf("chat with ID %s does not exist", chatID)
+	}
+
+	// Update the username for the peer in the specified chat
+	stmt, err := a.db.Prepare(`
+        UPDATE ChatMembers
+        SET username = ?
+        WHERE peer_id = ? AND chat_id = ?
+    `)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	_, err = stmt.Exec(username, peerID, chatID)
+	return err
 }
 
 func (a *StorageSQLiteAdapter) SetPeerUsername(username, peerID, chatID string) error {

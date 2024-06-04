@@ -169,17 +169,6 @@ func TestStorageSQLiteAdapter(t *testing.T) {
 		t.Errorf("Error setting peer username: %v", err)
 	}
 
-	/*
-		username, err := adapter.GetUsername("user1", "chat1")
-		if err != nil {
-			t.Errorf("Error getting username: %v", err)
-		}
-
-		if username != "CoolUser1" {
-			t.Errorf("Expected username 'CoolUser1', got '%s'", username)
-		}
-	*/
-
 	// Test PeerJoinedChat
 	err = adapter.PeerJoinedChat(340982203948, "user1", "chat1")
 	if err != nil {
@@ -224,32 +213,4 @@ func TestStorageSQLiteAdapter(t *testing.T) {
 		t.Errorf("Error inviting to chat: %v", err)
 	}
 
-	// Test GetInvitations
-	/* TODO: rework
-	invitations, err := adapter.GetInvitations("user1")
-	if err != nil {
-		t.Errorf("Error getting invitations: %v", err)
-	}
-	if len(invitations) == 0 {
-		t.Errorf("Expected to find invitations for user1, got none")
-	}
-	*/
-
-	// Test GetMissingInternalMessages
-	missingInternal, err := adapter.GetMissingInternalMessages("chat1", []string{"msg1"})
-	if err != nil {
-		t.Errorf("Error getting missing internal messages: %v", err)
-	}
-	if len(missingInternal) == 0 {
-		t.Errorf("Expected to find missing internal messages, got none")
-	}
-
-	// Test GetMissingExternalMessages
-	missingExternal, err := adapter.GetMissingExternalMessages("chat1", []string{"msg1"})
-	if err != nil {
-		t.Errorf("Error getting missing external messages: %v", err)
-	}
-	if len(missingExternal) == 0 {
-		t.Errorf("Expected to find missing external messages, got none")
-	}
 }

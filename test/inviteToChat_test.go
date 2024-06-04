@@ -64,7 +64,7 @@ func TestInviteToChatHandler(t *testing.T) {
 	mockNetworkConnection.SendMockNetworkMessageToSubscribers(inviteMessage)
 
 	// Verify that the invitation was stored in the database
-	invitations, err := adapter.GetInvitations("user2") //TODO make this usefull
+	invitations, err := adapter.GetInvitations("user2")
 	if err != nil {
 		t.Fatalf("Error getting invitations: %v", err)
 	}
