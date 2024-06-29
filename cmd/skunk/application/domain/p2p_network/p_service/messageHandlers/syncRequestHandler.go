@@ -3,24 +3,31 @@ package messageHandlers
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/google/uuid"
-	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_model"
-	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
 	"time"
+
+	"github.com/google/uuid"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/store"
 )
 
 // SyncRequestHandler handles the "SyncRequest" message operation.
-type SyncRequestHandler struct {
+type syncRequestHandler struct {
+	syncStorage           store.SyncStoragePort
+	networkMessageStorage store.NetworkMessageStoragePort
+	messageSender         *MessageSender
+}
+
+// NewSyncRequestHandler creates a new instance of syncRequestHandler.
+func NewSyncRequestHandler(syncStorage store.SyncStoragePort, networkMessageStorage store.NetworkMessageStoragePort, messageSender *MessageSender) *syncRequestHandler {
+	return &syncRequestHandler{
+		syncStorage:           syncStorage,
+		networkMessageStorage: networkMessageStorage,
+		messageSender:         messageSender,
+	}
 }
 
 // HandleMessage processes the received "SyncRequest" message.
-// It retrieves the chat messages from the repository, finds the missing messages
-// between the current peer and the other peer, and sends a sync response and a
-// sync request to the other peer.
-func (s *SyncRequestHandler) HandleMessage(message network.Message) error {
-	chatRepo := p_model.GetNetworkChatsInstance()
-	chatMessageRepo := chatRepo.GetChat(message.ChatID)
-
+func (s *syncRequestHandler) HandleMessage(message network.Message) error {
 	// Structure of the message:
 	/*
 		{
@@ -41,47 +48,77 @@ func (s *SyncRequestHandler) HandleMessage(message network.Message) error {
 		return err
 	}
 
-	// Find difference between "message" already known messages and own messages that the other peer does not know
-	missingExternalMessages := chatMessageRepo.GetMissingExternalMessages(content.ExistingMessageIDs)
-	missingInternalMessages := chatMessageRepo.GetMissingInternalMessageIDs(content.ExistingMessageIDs)
+	// Get missing messages
+	missingExternalMessageIDs, err := s.syncStorage.GetMissingExternalMessages(message.ChatID, content.ExistingMessageIDs)
+	if err != nil {
+		fmt.Println("Error getting missing external messages")
+		return err
+	}
 
-	// Convert missingExternalMessages to a JSON string
+	var missingExternalMessages []network.Message
+	missingExternalMessages = make([]network.Message, len(missingExternalMessageIDs))
+
+	for i, messageID := range missingExternalMessageIDs {
+		missingExternalMessages[i], err = s.networkMessageStorage.RetrieveMessage(messageID)
+		if err != nil {
+			return err
+		}
+	}
+
+	// TODO FIX
+	missingInternalMessages, err := s.syncStorage.GetMissingInternalMessages(message.ChatID, content.ExistingMessageIDs)
+	if err != nil {
+		fmt.Println("Error getting missing internal messages")
+		return err
+	}
+
+	// Convert missing messages to JSON strings
 	externalMessagesBytes, err := json.Marshal(missingExternalMessages)
 	if err != nil {
 		fmt.Println("Error marshalling missing external messages")
 		return err
 	}
 
-	// Convert missingInternalMessages to a JSON string
 	internalMessagesBytes, err := json.Marshal(missingInternalMessages)
 	if err != nil {
 		fmt.Println("Error marshalling missing internal messages")
 		return err
 	}
 
-	// Send the sync response to the other peer
+	// Create and send the sync response
 	syncResponse := network.Message{
-		Id:        uuid.New().String(),
-		Timestamp: time.Now().UnixNano(),
-		Content:   string(externalMessagesBytes),
-		FromUser:  chatMessageRepo.GetUsername(),
-		ChatID:    message.ChatID,
-		Operation: network.SYNC_RESPONSE,
+		Id:              uuid.New().String(),
+		Timestamp:       time.Now().UnixNano(),
+		Content:         string(externalMessagesBytes),
+		SenderID:        message.ReceiverID,
+		ReceiverID:      message.SenderID,
+		SenderAddress:   message.ReceiverAddress,
+		ReceiverAddress: message.SenderAddress,
+		ChatID:          message.ChatID,
+		Operation:       network.SYNC_RESPONSE,
 	}
 
-	// Send sync request to other peer to get the difference between the messages that the other peer knows this peer does not know
+	// Create and send the sync request
 	syncRequest := network.Message{
-		Id:        uuid.New().String(),
-		Timestamp: time.Now().UnixNano(),
-		Content:   string(internalMessagesBytes),
-		FromUser:  chatMessageRepo.GetUsername(),
-		ChatID:    message.ChatID,
-		Operation: network.SYNC_REQUEST,
+		Id:              uuid.New().String(),
+		Timestamp:       time.Now().UnixNano(),
+		Content:         string(internalMessagesBytes),
+		SenderID:        message.ReceiverID,
+		ReceiverID:      message.SenderID,
+		SenderAddress:   message.ReceiverAddress,
+		ReceiverAddress: message.SenderAddress,
+		ChatID:          message.ChatID,
+		Operation:       network.SYNC_REQUEST,
 	}
 
-	peer := GetPeerInstance()
-	peer.SendMessageToNetworkPeer("addressResponse", syncResponse)
-	peer.SendMessageToNetworkPeer("addressRequest", syncRequest)
+	err = s.messageSender.SendMessage(syncResponse)
+	if err != nil {
+		return err
+	}
+	err = s.messageSender.SendMessage(syncRequest)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }

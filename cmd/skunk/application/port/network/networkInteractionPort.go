@@ -7,7 +7,6 @@ const (
 	SEND_MESSAGE   OperationType = iota
 	SYNC_REQUEST   OperationType = iota
 	SYNC_RESPONSE  OperationType = iota
-	CREATE_CHAT    OperationType = iota
 	JOIN_CHAT      OperationType = iota
 	LEAVE_CHAT     OperationType = iota
 	INVITE_TO_CHAT OperationType = iota
@@ -24,7 +23,8 @@ type Message struct {
 	Id              string
 	Timestamp       int64
 	Content         string
-	FromUser        string
+	SenderID        string
+	ReceiverID      string
 	SenderAddress   string
 	ReceiverAddress string
 	ChatID          string
@@ -42,5 +42,5 @@ type NetworkObserver interface {
 type NetworkConnection interface {
 	SubscribeToNetwork(observer NetworkObserver) error
 	UnsubscribeFromNetwork() error
-	SendMessageToNetworkPeer(address string, message Message) error
+	SendMessageToNetworkPeer(message Message) error
 }

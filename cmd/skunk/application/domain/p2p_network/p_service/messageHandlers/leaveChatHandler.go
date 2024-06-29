@@ -2,14 +2,39 @@ package messageHandlers
 
 import (
 	"fmt"
+	"github.com/scherzma/Skunk/cmd/skunk/application/domain/chat"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/store"
 )
 
-// LeaveChatHandler handles the "LeaveChat" message operation.
-type LeaveChatHandler struct{}
+// A Peer leaves a chat
+type leaveChatHandler struct {
+	userChatLogic     chat.ChatLogic
+	chatActionStorage store.ChatActionStoragePort
+}
 
-func (l *LeaveChatHandler) HandleMessage(message network.Message) error {
-	//TODO implement
-	fmt.Println("LeaveChatHandler")
+func NewLeaveChatHandler(userChatLogic chat.ChatLogic, chatActionStorage store.ChatActionStoragePort) *leaveChatHandler {
+	return &leaveChatHandler{
+		userChatLogic:     userChatLogic,
+		chatActionStorage: chatActionStorage,
+	}
+}
+
+func (l *leaveChatHandler) HandleMessage(message network.Message) error {
+
+	// Update chat invitation storage and remove the peer from the chat
+	err := l.chatActionStorage.PeerLeftChat(message.SenderID, message.ChatID)
+	if err != nil {
+		fmt.Println("Error updating chat invitation storage")
+		return err
+	}
+
+	// Handle peer leaving the chat
+	err1 := l.userChatLogic.PeerLeavesChat(message.SenderID, message.ChatID)
+	if err1 != nil {
+		fmt.Println("Error handling peer leaving the chat")
+		return err1
+	}
+
 	return nil
 }

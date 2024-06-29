@@ -32,5 +32,5 @@ type FrontendObserver interface {
 type Frontend interface {
 	SubscribeToFrontend(observer FrontendObserver) error
 	UnsubscribeFromFrontend(observer FrontendObserver) error
-	SendToFrontend(message FrontendMessage) error
+	SendToFrontend(message FrontendMessage) error // TODO: change to FrontendMessage
 }
