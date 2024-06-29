@@ -1,7 +1,5 @@
 package test
 
-import "fmt"
-
 type MockChatLogic struct {
 	LastSenderId    string
 	LastChatId      string
@@ -12,12 +10,18 @@ type MockChatLogic struct {
 	LastFileData    string
 	LastMessage     string
 	LastUsername    string
+	LogEntries      []string
+}
+
+func (m *MockChatLogic) log(message string) {
+	m.LogEntries = append(m.LogEntries, message)
 }
 
 func (m *MockChatLogic) ReceiveMessage(senderId string, chatId string, message string) error {
 	m.LastSenderId = senderId
 	m.LastChatId = chatId
 	m.LastMessage = message
+	m.log("ReceiveMessage called")
 	return nil
 }
 
@@ -26,27 +30,29 @@ func (m *MockChatLogic) ReceiveChatInvitation(senderId string, chatId string, ch
 	m.LastChatId = chatId
 	m.LastChatName = chatName
 	m.LastChatMembers = chatMembers
-	fmt.Printf("Invitation received from %s to join chat %s (%s) with members %v\n", senderId, chatId, chatName, chatMembers)
+	m.log("ReceiveChatInvitation called")
 	return nil
 }
 
 func (m *MockChatLogic) PeerLeavesChat(senderId string, chatId string) error {
 	m.LastSenderId = senderId
 	m.LastChatId = chatId
+	m.log("PeerLeavesChat called")
 	return nil
 }
 
 func (m *MockChatLogic) PeerJoinsChat(senderId string, chatId string) error {
 	m.LastSenderId = senderId
 	m.LastChatId = chatId
-	fmt.Printf("Peer %s joined chat %s\n", senderId, chatId)
+	m.log("PeerJoinsChat called")
 	return nil
 }
+
 func (m *MockChatLogic) ReceiveFile(senderId string, chatId string, filePath string) error {
 	m.LastSenderId = senderId
 	m.LastChatId = chatId
 	m.LastFileName = filePath
-	fmt.Printf("Received file from %s in chat %s: %s\n", senderId, chatId, filePath)
+	m.log("ReceiveFile called")
 	return nil
 }
 
@@ -54,6 +60,6 @@ func (m *MockChatLogic) PeerSetsUsername(senderId string, chatId string, usernam
 	m.LastSenderId = senderId
 	m.LastChatId = chatId
 	m.LastUsername = username
-	fmt.Printf("Peer %s set username to %s in chat %s\n", senderId, username, chatId) // Add a print statement for debugging
+	m.log("PeerSetsUsername called")
 	return nil
 }

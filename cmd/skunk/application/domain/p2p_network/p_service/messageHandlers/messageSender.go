@@ -8,7 +8,7 @@ import (
 )
 
 // This has many problems right now.
-// For example is it only able to handle on connection. That means, while the peer is able to handle more, this is a bottleneck.
+// For example is it only able to handle one connection. That means, while the peer is able to handle more, this is a bottleneck.
 // One could create multiple MessageSenders, but this is probably a bad idea.
 // Because, if done so, everything would need multiple messageSenders, or swap them for possibly ever message.
 // Still, being able to handle multiple networkConnections is not a requirement for the first release, and while many parts of the architecture support it, this will suffice.

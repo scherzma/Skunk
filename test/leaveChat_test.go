@@ -2,7 +2,6 @@ package test
 
 import (
 	"encoding/json"
-	"fmt"
 	"github.com/scherzma/Skunk/cmd/skunk/adapter/in/networkMockAdapter"
 	"github.com/scherzma/Skunk/cmd/skunk/adapter/out/storage/storageSQLiteAdapter"
 	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_service/messageHandlers"
@@ -15,20 +14,19 @@ import (
 
 // TestLeaveChatHandler verifies the leaveChatHandler using a mock handler
 func TestLeaveChatHandler(t *testing.T) {
-	// Create a temporary database for testing
 	dbPath := "test_leave_chat_handler.db"
 	defer os.Remove(dbPath)
+	t.Logf("Using temporary database: %s", dbPath)
 
-	// Initialize storage adapter
 	adapter := storageSQLiteAdapter.GetInstance(dbPath)
+	t.Log("Storage adapter initialized")
 
-	// Create a mock chat logic
 	mockChatLogic := &MockChatLogic{}
+	t.Log("Mock chat logic created")
 
-	// Create a leaveChatHandler with the mock chat logic and storage adapter
 	leaveChatHandler := messageHandlers.NewLeaveChatHandler(mockChatLogic, adapter)
+	t.Log("Leave chat handler created")
 
-	// Prepare a leave chat message
 	leaveChatMessage := network.Message{
 		Id:              "leaveMsg1",
 		Timestamp:       1633029460,
@@ -40,37 +38,33 @@ func TestLeaveChatHandler(t *testing.T) {
 		ChatID:          "chat1",
 		Operation:       network.LEAVE_CHAT,
 	}
+	t.Logf("Leave chat message created: %+v", leaveChatMessage)
 
-	// Handle the leave chat message
 	err := leaveChatHandler.HandleMessage(leaveChatMessage)
-	if err != nil {
-		t.Fatalf("Error handling leave chat message: %v", err)
-	}
+	assert.NoError(t, err, "Error handling leave chat message")
 
-	// Verify that the peer left the chat
-	assert.Equal(t, "user1", mockChatLogic.LastSenderId)
-	assert.Equal(t, "chat1", mockChatLogic.LastChatId)
+	assert.Equal(t, "user1", mockChatLogic.LastSenderId, "Unexpected LastSenderId")
+	assert.Equal(t, "chat1", mockChatLogic.LastChatId, "Unexpected LastChatId")
 
-	fmt.Println("Leave chat handler test passed")
+	t.Log("Leave chat handler test passed")
 }
 
 // TestPeerLeavesChat tests the complete flow from network to peer
 func TestPeerLeavesChat(t *testing.T) {
-	// Create a temporary database for testing
 	dbPath := "test_peer_leaves_chat.db"
 	defer os.Remove(dbPath)
+	t.Logf("Using temporary database: %s", dbPath)
 
-	// Initialize storage adapter
 	adapter := storageSQLiteAdapter.GetInstance(dbPath)
+	t.Log("Storage adapter initialized")
 
-	// Create a mock network connection
 	mockNetworkConnection := networkMockAdapter.GetMockConnection()
+	t.Log("Mock network connection created")
 
-	// Create a peer and add the mock network connection
 	peer := messageHandlers.GetPeerInstance()
 	peer.AddNetworkConnection(mockNetworkConnection)
+	t.Log("Peer instance created and mock network connection added")
 
-	// Prepare a leave chat message
 	leaveChatMessage := network.Message{
 		Id:              "leaveMsg1",
 		Timestamp:       1633029460,
@@ -82,8 +76,8 @@ func TestPeerLeavesChat(t *testing.T) {
 		ChatID:          "chat1",
 		Operation:       network.LEAVE_CHAT,
 	}
+	t.Logf("Leave chat message created: %+v", leaveChatMessage)
 
-	// Create an invitation for a user, because otherwise the user will not be able to join the chat
 	inviteContent := struct {
 		ChatID   string                   `json:"chatId"`
 		ChatName string                   `json:"chatName"`
@@ -97,9 +91,8 @@ func TestPeerLeavesChat(t *testing.T) {
 	}
 
 	inviteContentBytes, err := json.Marshal(inviteContent)
-	if err != nil {
-		t.Fatalf("Error marshalling invite content: %v", err)
-	}
+	assert.NoError(t, err, "Error marshalling invite content")
+	t.Log("Invite content prepared")
 
 	inviteMessage := network.Message{
 		Id:              "inviteMsg1",
@@ -112,8 +105,8 @@ func TestPeerLeavesChat(t *testing.T) {
 		ChatID:          "chat1",
 		Operation:       network.INVITE_TO_CHAT,
 	}
+	t.Logf("Invite message created: %+v", inviteMessage)
 
-	// Prepare a join chat message
 	joinChatMessage := network.Message{
 		Id:              "joinMsg1",
 		Timestamp:       1633029460,
@@ -125,16 +118,18 @@ func TestPeerLeavesChat(t *testing.T) {
 		ChatID:          "chat1",
 		Operation:       network.JOIN_CHAT,
 	}
+	t.Logf("Join chat message created: %+v", joinChatMessage)
 
 	mockNetworkConnection.SendMockNetworkMessageToSubscribers(inviteMessage)
+	t.Log("Invite message sent")
 	mockNetworkConnection.SendMockNetworkMessageToSubscribers(joinChatMessage)
+	t.Log("Join chat message sent")
 	mockNetworkConnection.SendMockNetworkMessageToSubscribers(leaveChatMessage)
+	t.Log("Leave chat message sent")
 
-	// Verify that the peer was removed from the chat in the database
 	usersInChat, err := adapter.GetUsersInChat("chat1")
-	if err != nil {
-		t.Fatalf("Error getting users in chat: %v", err)
-	}
+	assert.NoError(t, err, "Error getting users in chat")
+	t.Logf("Users in chat: %+v", usersInChat)
 
 	found := false
 	for _, user := range usersInChat {
@@ -144,9 +139,7 @@ func TestPeerLeavesChat(t *testing.T) {
 		}
 	}
 
-	if found {
-		t.Fatalf("Expected not to find user 'user2' in chat 'chat1', but did")
-	}
+	assert.False(t, found, "Expected not to find user 'user2' in chat 'chat1', but did")
 
-	fmt.Println("Peer leaves chat flow test passed")
+	t.Log("Peer leaves chat flow test passed")
 }

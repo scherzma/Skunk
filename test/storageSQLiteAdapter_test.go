@@ -1,23 +1,94 @@
 package test
 
 import (
-	"fmt"
 	"github.com/scherzma/Skunk/cmd/skunk/adapter/out/storage/storageSQLiteAdapter"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/store"
+	"github.com/stretchr/testify/assert"
 	"os"
-	"reflect"
 	"testing"
 )
 
 func TestStorageSQLiteAdapter(t *testing.T) {
-	// Create a temporary database for testing
 	dbPath := "test.db"
 	defer os.Remove(dbPath)
+	t.Logf("Using temporary database: %s", dbPath)
 
 	adapter := storageSQLiteAdapter.GetInstance(dbPath)
+	t.Log("Storage adapter initialized")
 
-	testMessages := []network.Message{
+	testMessages := getTestMessages()
+
+	t.Run("StoreAndRetrieveMessages", func(t *testing.T) {
+		for _, msg := range testMessages {
+			err := adapter.StoreMessage(msg)
+			assert.NoError(t, err, "Error storing message")
+		}
+		t.Log("Messages stored")
+
+		for _, msg := range testMessages {
+			retrieved, err := adapter.RetrieveMessage(msg.Id)
+			assert.NoError(t, err, "Error retrieving message")
+			assert.Equal(t, msg, retrieved, "Retrieved message does not match stored message")
+		}
+		t.Log("All messages successfully retrieved and matched")
+	})
+
+	t.Run("GetChatMessages", func(t *testing.T) {
+		chatMessages, err := adapter.GetChatMessages("chat1")
+		assert.NoError(t, err, "Error getting chat messages")
+		assert.Equal(t, len(testMessages), len(chatMessages), "Unexpected number of chat messages")
+		t.Log("GetChatMessages successful")
+	})
+
+	t.Run("SetPeerUsername", func(t *testing.T) {
+		err := adapter.SetPeerUsername("CoolUser1", "user1", "chat1")
+		assert.NoError(t, err, "Error setting peer username")
+		t.Log("SetPeerUsername successful")
+	})
+
+	t.Run("PeerJoinedChat", func(t *testing.T) {
+		err := adapter.PeerJoinedChat(340982203948, "user1", "chat1")
+		assert.NoError(t, err, "Error adding peer to chat")
+		t.Log("PeerJoinedChat successful")
+	})
+
+	t.Run("PeerLeftChat", func(t *testing.T) {
+		err := adapter.PeerLeftChat("user1", "chat1")
+		assert.NoError(t, err, "Error removing peer from chat")
+		t.Log("PeerLeftChat successful")
+	})
+
+	t.Run("CreateAndGetChats", func(t *testing.T) {
+		err := adapter.CreateChat("chat2", "Test Chat")
+		assert.NoError(t, err, "Error creating chat")
+
+		chats, err := adapter.GetChats()
+		assert.NoError(t, err, "Error getting chats")
+
+		foundChat := false
+		for _, chat := range chats {
+			if chat.ChatId == "chat2" && chat.ChatName == "Test Chat" {
+				foundChat = true
+				break
+			}
+		}
+		assert.True(t, foundChat, "Created chat not found in GetChats")
+		t.Log("CreateChat and GetChats successful")
+	})
+
+	t.Run("InvitedToChat", func(t *testing.T) {
+		err := adapter.InvitedToChat("msg1", []store.PublicKeyAddress{
+			{PublicKey: "user5.onion", Address: "address1"},
+			{PublicKey: "user6.onion", Address: "address2"},
+		})
+		assert.NoError(t, err, "Error inviting to chat")
+		t.Log("InvitedToChat successful")
+	})
+}
+
+func getTestMessages() []network.Message {
+	return []network.Message{
 		{
 			Id:              "msg1",
 			Timestamp:       1620000000,
@@ -129,88 +200,4 @@ func TestStorageSQLiteAdapter(t *testing.T) {
 			Operation:       network.TEST_MESSAGE_2,
 		},
 	}
-
-	// Store the test messages
-	for _, msg := range testMessages {
-		err := adapter.StoreMessage(msg)
-		if err != nil {
-			t.Errorf("Error storing message: %v", err)
-		}
-	}
-
-	fmt.Println("Messages stored")
-
-	// Retrieve the messages and compare
-	for _, msg := range testMessages {
-		retrieved, err := adapter.RetrieveMessage(msg.Id)
-		if err != nil {
-			t.Errorf("Error retrieving message: %v", err)
-		}
-		fmt.Println("Stored message: ", msg)
-		fmt.Println("Retrieved message: ", retrieved)
-		if !reflect.DeepEqual(msg, retrieved) {
-			t.Errorf("Retrieved message does not match stored message\nExpected: %+v\nGot: %+v", msg, retrieved)
-		}
-	}
-
-	// Test GetChatMessages
-	chatMessages, err := adapter.GetChatMessages("chat1")
-	if err != nil {
-		t.Errorf("Error getting chat messages: %v", err)
-	}
-
-	if len(chatMessages) != len(testMessages) {
-		t.Errorf("Expected %d chat messages, got %d", len(testMessages), len(chatMessages))
-	}
-
-	// Test SetPeerUsername
-	err = adapter.SetPeerUsername("CoolUser1", "user1", "chat1")
-	if err != nil {
-		t.Errorf("Error setting peer username: %v", err)
-	}
-
-	// Test PeerJoinedChat
-	err = adapter.PeerJoinedChat(340982203948, "user1", "chat1")
-	if err != nil {
-		t.Errorf("Error adding peer to chat: %v", err)
-	}
-
-	// Test PeerLeftChat
-	err = adapter.PeerLeftChat("user1", "chat1")
-	if err != nil {
-		t.Errorf("Error removing peer from chat: %v", err)
-	}
-
-	// Test CreateChat
-	err = adapter.CreateChat("chat2", "Test Chat")
-	if err != nil {
-		t.Errorf("Error creating chat: %v", err)
-	}
-
-	chats, err := adapter.GetChats()
-	if err != nil {
-		t.Errorf("Error getting chats: %v", err)
-	}
-
-	foundChat := false
-	for _, chat := range chats {
-		if chat.ChatId == "chat2" && chat.ChatName == "Test Chat" {
-			foundChat = true
-			break
-		}
-	}
-
-	if !foundChat {
-		t.Errorf("Created chat not found in GetChats")
-	}
-
-	// Test InvitedToChat
-	err = adapter.InvitedToChat("msg1", []store.PublicKeyAddress{
-		{PublicKey: "user5.onion", Address: "address1"},
-		{PublicKey: "user6.onion", Address: "address2"},
-	})
-	if err != nil {
-		t.Errorf("Error inviting to chat: %v", err)
-	}
-
 }

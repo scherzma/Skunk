@@ -2,7 +2,6 @@ package test
 
 import (
 	"encoding/json"
-	"fmt"
 	"github.com/scherzma/Skunk/cmd/skunk/adapter/in/networkMockAdapter"
 	"github.com/scherzma/Skunk/cmd/skunk/adapter/out/storage/storageSQLiteAdapter"
 	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_service/messageHandlers"
@@ -16,16 +15,20 @@ func TestInviteToChatHandler(t *testing.T) {
 	// Create a temporary database for testing
 	dbPath := "test_invite_to_chat.db"
 	defer os.Remove(dbPath)
+	t.Logf("Using temporary database: %s", dbPath)
 
 	// Initialize storage adapter
 	adapter := storageSQLiteAdapter.GetInstance(dbPath)
+	t.Log("Storage adapter initialized")
 
 	// Create a mock network connection
 	mockNetworkConnection := networkMockAdapter.GetMockConnection()
+	t.Log("Mock network connection created")
 
 	// Create a peer and add the mock network connection
 	peer := messageHandlers.GetPeerInstance()
 	peer.AddNetworkConnection(mockNetworkConnection)
+	t.Log("Peer instance created and mock network connection added")
 
 	// Prepare an invite to chat message
 	inviteContent := struct {
@@ -45,9 +48,7 @@ func TestInviteToChatHandler(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error marshalling invite content: %v", err)
 	}
-
-	//inviteBytes := string(inviteContentBytes)
-	//fmt.Println(inviteBytes)
+	t.Log("Invite content prepared")
 
 	inviteMessage := network.Message{
 		Id:              "inviteMsg1",
@@ -60,14 +61,17 @@ func TestInviteToChatHandler(t *testing.T) {
 		ChatID:          "chat1",
 		Operation:       network.INVITE_TO_CHAT,
 	}
+	t.Logf("Invite message created: %+v", inviteMessage)
 
 	mockNetworkConnection.SendMockNetworkMessageToSubscribers(inviteMessage)
+	t.Log("Mock network message sent")
 
 	// Verify that the invitation was stored in the database
 	invitations, err := adapter.GetInvitations("user2")
 	if err != nil {
 		t.Fatalf("Error getting invitations: %v", err)
 	}
+	t.Logf("Retrieved invitations for user2: %v", invitations)
 
 	found := false
 	for _, invitation := range invitations {
@@ -81,5 +85,5 @@ func TestInviteToChatHandler(t *testing.T) {
 		t.Fatalf("Expected to find invitation to 'chat1' for 'user2', but did not")
 	}
 
-	fmt.Println("Invite to chat test passed")
+	t.Log("Invite to chat test passed")
 }

@@ -2,7 +2,6 @@ package test
 
 import (
 	"encoding/json"
-	"fmt"
 	"github.com/scherzma/Skunk/cmd/skunk/adapter/in/networkMockAdapter"
 	"github.com/scherzma/Skunk/cmd/skunk/adapter/out/storage/storageSQLiteAdapter"
 	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_service/messageHandlers"
@@ -13,22 +12,71 @@ import (
 )
 
 func TestSyncResponseHandler(t *testing.T) {
-	// Create a temporary database for testing
 	dbPath := "test_sync_response.db"
 	defer os.Remove(dbPath)
+	t.Logf("Using temporary database: %s", dbPath)
 
-	// Initialize storage adapter
 	adapter := storageSQLiteAdapter.GetInstance(dbPath)
+	t.Log("Storage adapter initialized")
 
-	// Create a mock network connection
 	mockNetworkConnection := networkMockAdapter.GetMockConnection()
+	t.Log("Mock network connection created")
 
-	// Create a peer and add the mock network connection
 	peer := messageHandlers.GetPeerInstance()
-	peer.AddNetworkConnection(mockNetworkConnection)
+	err := peer.AddNetworkConnection(mockNetworkConnection)
+	assert.NoError(t, err, "Error adding mock network connection to peer")
+	t.Log("Peer instance created and mock network connection added")
 
-	// Create some internal messages
-	internalMessages := []network.Message{
+	t.Run("StoreInternalMessages", func(t *testing.T) {
+		internalMessages := getInternalMessages_Response()
+		for _, msg := range internalMessages {
+			err := adapter.StoreMessage(msg)
+			assert.NoError(t, err, "Error storing internal message")
+		}
+		t.Log("Internal messages stored successfully")
+	})
+
+	t.Run("PrepareSyncResponseMessage", func(t *testing.T) {
+		messagesToSync := getMessagesToSync()
+		syncResponseContent, err := json.Marshal(messagesToSync)
+		assert.NoError(t, err, "Error marshalling sync response content")
+
+		testSyncResponseMessage := network.Message{
+			Id:              "syncMsg1",
+			Timestamp:       1633029450,
+			Content:         string(syncResponseContent),
+			SenderID:        "user2",
+			ReceiverID:      "user1",
+			SenderAddress:   "user2.onion",
+			ReceiverAddress: "user1.onion",
+			ChatID:          "chat1",
+			Operation:       network.SYNC_RESPONSE,
+		}
+		t.Logf("Sync response message prepared: %+v", testSyncResponseMessage)
+
+		err = adapter.PeerJoinedChat(3214523465, "user2", "chat1")
+		assert.NoError(t, err, "Error adding peer to chat")
+
+		err = mockNetworkConnection.SendMockNetworkMessageToSubscribers(testSyncResponseMessage)
+		assert.NoError(t, err, "Error sending sync response message")
+		t.Log("Sync response message sent successfully")
+	})
+
+	t.Run("VerifySyncedMessages", func(t *testing.T) {
+		messagesToSync := getMessagesToSync()
+		for _, originalMessage := range messagesToSync {
+			retrievedMessage, err := adapter.RetrieveMessage(originalMessage.Id)
+			assert.NoError(t, err, "Error retrieving message")
+			assert.Equal(t, originalMessage, retrievedMessage, "Stored message does not match original message")
+		}
+		t.Log("All synced messages verified successfully")
+	})
+
+	t.Log("Sync response test passed")
+}
+
+func getInternalMessages_Response() []network.Message {
+	return []network.Message{
 		{
 			Id:              "msgMsg3",
 			Timestamp:       1633029448,
@@ -63,17 +111,10 @@ func TestSyncResponseHandler(t *testing.T) {
 			Operation:       network.SEND_MESSAGE,
 		},
 	}
+}
 
-	// Store internal messages
-	for _, msg := range internalMessages {
-		err := adapter.StoreMessage(msg)
-		if err != nil {
-			t.Errorf("Error storing internal message: %v", err)
-		}
-	}
-
-	// Create some messages to be synced
-	messagesToSync := []network.Message{
+func getMessagesToSync() []network.Message {
+	return []network.Message{
 		{
 			Id:              "msg1",
 			Timestamp:       1633029445,
@@ -97,40 +138,4 @@ func TestSyncResponseHandler(t *testing.T) {
 			Operation:       network.SEND_MESSAGE,
 		},
 	}
-
-	// Convert missing messages to JSON strings
-	syncResponseContent, err := json.Marshal(messagesToSync)
-	if err != nil {
-		fmt.Println("Error marshalling missing external messages")
-	}
-
-	// Prepare a sync response message
-	testSyncResponseMessage := network.Message{
-		Id:              "syncMsg1",
-		Timestamp:       1633029450,
-		Content:         string(syncResponseContent),
-		SenderID:        "user2",
-		ReceiverID:      "user1",
-		SenderAddress:   "user2.onion",
-		ReceiverAddress: "user1.onion",
-		ChatID:          "chat1",
-		Operation:       network.SYNC_RESPONSE,
-	}
-
-	adapter.PeerJoinedChat(3214523465, "user2", "chat1")
-
-	// Send the sync response message to trigger the sync process
-	mockNetworkConnection.SendMockNetworkMessageToSubscribers(testSyncResponseMessage)
-
-	// Retrieve messages from the database and verify they were correctly stored
-	for _, originalMessage := range messagesToSync {
-		retrievedMessage, err := adapter.RetrieveMessage(originalMessage.Id)
-		if err != nil {
-			t.Errorf("Error retrieving message: %v", err)
-		}
-
-		assert.Equal(t, originalMessage, retrievedMessage, "Stored message does not match original message")
-	}
-
-	fmt.Println("Sync response test passed")
 }
