@@ -1,14 +1,14 @@
-// Package messageHandlers provides message handling for the p2p network.
 package messageHandlers
 
 import (
 	"errors"
 	"fmt"
-	"sync"
-
-	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_model"
+	"github.com/scherzma/Skunk/cmd/skunk/adapter/out/storage/storageSQLiteAdapter"
+	"github.com/scherzma/Skunk/cmd/skunk/application/domain/chat/c_service"
 	"github.com/scherzma/Skunk/cmd/skunk/application/domain/p2p_network/p_service"
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/network"
+	"github.com/scherzma/Skunk/cmd/skunk/application/port/store"
+	"sync"
 )
 
 var (
@@ -16,40 +16,44 @@ var (
 	once         sync.Once
 )
 
-// Peer represents a node in the p2p network. It manages network connections,
-// message handlers, and security context. The Peer struct is a singleton instance
-// that is lazily initialized using the sync.Once mechanism.
 type Peer struct {
-	Chats           p_model.NetworkChats
 	Address         string
-	handlers        map[network.OperationType]MessageHandler
+	ID              string
 	connections     []network.NetworkConnection
-	securityContext p_service.SecurityContext
+	handlers        map[network.OperationType]MessageHandler
+	messageSender   *MessageSender
+	securityContext p_service.SecurityValidater
+	storage         store.NetworkMessageStoragePort
 }
 
 func GetPeerInstance() *Peer {
 	once.Do(func() {
+		storage := storageSQLiteAdapter.GetInstance("skunk.db")
+		securityContext := p_service.NewSecurityContext(storage, storage, storage)
+		sender := NewMessageSender(securityContext)
+		chatLogic := c_service.GetChatServiceInstance()
+
 		handlers := map[network.OperationType]MessageHandler{
-			network.SEND_MESSAGE:  &SendMessageHandler{},
-			network.SYNC_REQUEST:  &SyncRequestHandler{},
-			network.SYNC_RESPONSE: &SyncResponseHandler{},
-			// CREATE_CHAT missing
-			network.JOIN_CHAT:      &JoinChatHandler{},
-			network.LEAVE_CHAT:     &LeaveChatHandler{},
-			network.INVITE_TO_CHAT: &InviteToChatHandler{},
-			network.SEND_FILE:      &SendFileHandler{},
-			network.SET_USERNAME:   &SetUsernameHandler{},
-			// USER_OFFLINE missing
+			network.SEND_MESSAGE:   NewSendMessageHandler(chatLogic, storage),
+			network.SYNC_REQUEST:   NewSyncRequestHandler(storage, storage, sender),
+			network.SYNC_RESPONSE:  NewSyncResponseHandler(storage),
+			network.JOIN_CHAT:      NewJoinChatHandler(chatLogic, storage),
+			network.LEAVE_CHAT:     NewLeaveChatHandler(chatLogic, storage),
+			network.INVITE_TO_CHAT: NewInviteToChatHandler(chatLogic, storage),
+			network.SEND_FILE:      NewSendFileHandler(chatLogic, storage),
+			network.SET_USERNAME:   NewSetUsernameHandler(chatLogic, storage),
 			network.NETWORK_ONLINE: &NetworkOnlineHandler{},
 			network.TEST_MESSAGE:   &TestMessageHandler{},
 			network.TEST_MESSAGE_2: &TestMessageHandler2{},
 		}
 
 		peerInstance = &Peer{
-			Chats:           p_model.NetworkChats{},
+			Address:         "",
 			handlers:        handlers,
 			connections:     []network.NetworkConnection{},
-			securityContext: p_service.SecurityContext{},
+			securityContext: securityContext,
+			storage:         storage,
+			messageSender:   sender,
 		}
 	})
 
@@ -58,12 +62,18 @@ func GetPeerInstance() *Peer {
 
 // AddNetworkConnection adds a new network connection to the Peer instance
 // and subscribes the Peer to the network events.
-func (p *Peer) AddNetworkConnection(connection network.NetworkConnection) {
+func (p *Peer) AddNetworkConnection(connection network.NetworkConnection) error {
+	if len(p.connections) > 0 {
+		return errors.New("connection already exists, multiple connections are not supported so far")
+	}
+
 	p.connections = append(p.connections, connection)
 	connection.SubscribeToNetwork(p)
+	p.messageSender.SetNetworkConnection(connection)
+
+	return nil
 }
 
-// RemoveNetworkConnection removes a network connection from the Peer instance.
 func (p *Peer) RemoveNetworkConnection(connection network.NetworkConnection) {
 	for i, c := range p.connections {
 		if c == connection {
@@ -72,6 +82,7 @@ func (p *Peer) RemoveNetworkConnection(connection network.NetworkConnection) {
 				fmt.Println(err)
 			}
 			p.connections = append(p.connections[:i], p.connections[i+1:]...)
+			connection.UnsubscribeFromNetwork()
 			break
 		}
 	}
@@ -86,21 +97,13 @@ func (p *Peer) Notify(message network.Message) error {
 		if !p.securityContext.ValidateIncomingMessage(message) {
 			return errors.New("invalid message")
 		}
-		return handler.HandleMessage(message)
+
+		p.storage.StoreMessage(message)
+
+		if message.ReceiverID == p.ID {
+			return handler.HandleMessage(message)
+		}
+		return handler.HandleMessage(message) // TODO: return nil, this is just to test things.
 	}
 	return errors.New("invalid message operation")
-}
-
-// SendMessageToNetworkPeer sends a message to a network peer.
-func (p *Peer) SendMessageToNetworkPeer(address string, message network.Message) error {
-	if !p.securityContext.ValidateOutgoingMessage(message) {
-		return errors.New("invalid message")
-	}
-
-	for _, connection := range p.connections {
-		if err := connection.SendMessageToNetworkPeer(address, message); err != nil {
-			return err
-		}
-	}
-	return nil
 }

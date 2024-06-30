@@ -26,10 +26,15 @@ func TestNotify(t *testing.T) {
 	peer := messageHandlers.GetPeerInstance()
 
 	testMessage := network.Message{
-		Id:        "8888",
-		Timestamp: 1633029445,
-		Content:   "Hello World!",
-		Operation: network.TEST_MESSAGE,
+		Id:              "8888",
+		Timestamp:       1633029445,
+		Content:         "Hello World!",
+		SenderID:        "user1",
+		ReceiverID:      "user2",
+		SenderAddress:   "user1.onion",
+		ReceiverAddress: "user2.onion",
+		ChatID:          "chat1",
+		Operation:       network.TEST_MESSAGE,
 	}
 
 	err := peer.Notify(testMessage)
@@ -47,9 +52,8 @@ func TestSubscribeAndUnsubscribeToNetwork(t *testing.T) {
 	mockConnection := networkMockAdapter.GetMockConnection()
 	peer := messageHandlers.GetPeerInstance()
 
-	err := mockConnection.SubscribeToNetwork(peer)
-	assert.NoError(t, err, "SubscribeToNetwork() failed, expected nil, got error")
+	err := peer.AddNetworkConnection(mockConnection)
+	assert.NoError(t, err, "AddNetworkConnection() failed, expected nil, got error")
 
-	err = mockConnection.UnsubscribeFromNetwork()
-	assert.NoError(t, err, "UnsubscribeFromNetwork() failed, expected nil, got error")
+	peer.RemoveNetworkConnection(mockConnection)
 }
