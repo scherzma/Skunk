@@ -7,6 +7,9 @@ import (
 	"github.com/scherzma/Skunk/cmd/skunk/application/port/frontend"
 )
 
+// Still WIP
+// frontend and backend are not connected yet
+
 // FrontendAdapter implements the frontend.Frontend interface
 type FrontendAdapter struct {
 	mu       sync.RWMutex

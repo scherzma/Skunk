@@ -680,6 +680,7 @@ func GetSortedChatIDs(chatNames map[string]string) []string {
 }
 
 // TestConnection simulates testing a connection to an OnionID.
+// Still WIP
 func TestConnection(onionID string) bool {
 
 	return onionID == "validOnionID"
